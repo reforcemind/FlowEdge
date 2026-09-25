@@ -29,6 +29,28 @@ def measured():
 
 
 class BenchmarkArtifactTest(unittest.TestCase):
+    def test_size_budget_rebaseline_is_auditable(self):
+        budgets = json.loads((ROOT / "bench/config/budgets.json").read_text())
+        baseline = json.loads((ROOT / "bench/config/budget-baseline.json").read_text())
+        self.assertEqual(budgets["version"], 1)
+        self.assertEqual(baseline["schema"], 1)
+        self.assertEqual(
+            budgets["max_library_bytes"]["core"],
+            baseline["current"]["core_budget"],
+        )
+        self.assertEqual(budgets["max_library_bytes"]["relay"], 450000)
+        self.assertEqual(
+            baseline["previous"]["relay_bytes"], baseline["current"]["relay_bytes"]
+        )
+        self.assertLess(
+            baseline["current"]["core_bytes"],
+            baseline["current"]["core_budget"],
+        )
+        self.assertEqual(
+            baseline["current"]["core_bytes"] - baseline["previous"]["core_bytes"],
+            85592,
+        )
+
     def test_template_is_valid_and_explicitly_unmeasured(self):
         document = benchmark_artifact.validate(
             json.loads(TEMPLATE.read_text(encoding="utf-8"))

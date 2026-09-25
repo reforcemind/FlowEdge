@@ -53,11 +53,15 @@ FLOWEDGE_BUILD_DIR="$BUILD_DIR" "$ROOT/scripts/build.sh" Release \
   -DFLOWEDGE_PYTHON="$PYTHON_OPTION"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
+BUDGET_STATUS=0
 if [[ -n "$PYTHON" ]]; then
   (cd "$ROOT" && "$PYTHON" -m unittest discover -s test -p benchmark_artifact_test.py)
   (cd "$ROOT" && "$PYTHON" -m flowedge_dev bench budgets \
     --build-dir "$BUILD_DIR" --model "$MODEL" --token 1 --token 2 --token 3 --token 4 \
-    --budget "$ROOT/bench/config/budgets.json" --report "$BUILD_DIR/budget-report.md")
+    --budget "$ROOT/bench/config/budgets.json" --report "$BUILD_DIR/budget-report.md") || BUDGET_STATUS=$?
+  if [[ "$BUDGET_STATUS" != 0 ]]; then
+    echo "budget check failed (exit $BUDGET_STATUS); continuing independent checks, full gate remains failed" >&2
+  fi
 else
   echo "note: Python unavailable; skipping size/setup budget report"
 fi
@@ -148,4 +152,8 @@ else
   echo "note: no runnable native Python; C++ release surface fully verified"
 fi
 
+if [[ "$BUDGET_STATUS" != 0 ]]; then
+  echo "FlowEdge verification FAILED: size/setup budget check (exit $BUDGET_STATUS)" >&2
+  exit "$BUDGET_STATUS"
+fi
 echo "FlowEdge complete verification passed"

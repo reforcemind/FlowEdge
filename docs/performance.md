@@ -297,3 +297,9 @@ for i in 1 2 3 4 5; do ./build/flowedge_job_qos_bench 1000000; done
 FLOWEDGE_BUILD_DIR=build-all ./scripts/verify_all.sh models/mamba_flow.safetensors
 cat build-all/budget-report.md
 ```
+
+`bench/config/budget-baseline.json` records the named Release configuration,
+measured revisions, and rationale for the current thresholds. Rebaseline only
+after comparing the old and new revisions with the same toolchain. The static
+archive byte count includes compiler- and archive-format overhead, so it is a
+review signal for that configuration rather than a portable code-size metric.

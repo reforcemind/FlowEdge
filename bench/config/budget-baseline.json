@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "measurement": "static archive file bytes",
+  "configuration": {
+    "build_type": "Release",
+    "backend": "cpu",
+    "compiler": "GCC 13.3.0",
+    "system": "x86_64 Linux under WSL2"
+  },
+  "previous": {
+    "revision": "115b3f09d7a650dc154831f06cdd3d1df3988c9e",
+    "core_bytes": 328258,
+    "relay_bytes": 422170,
+    "core_budget": 350000
+  },
+  "current": {
+    "revision": "97f572064e3e785eca1663bfab709941d441e906",
+    "core_bytes": 413850,
+    "relay_bytes": 422170,
+    "core_budget": 440000
+  },
+  "rationale": "Core grew by 85592 bytes after adding reviewed runtime surfaces, including a 48856-byte SmolVLA action-expert object. The new rounded limit retains 6.32 percent headroom; the prior measured baseline had 6.62 percent headroom. Relay and allocation limits are unchanged.",
+  "scope": "Review threshold for this named Release configuration; not a compiler-independent binary-size claim."
+}
