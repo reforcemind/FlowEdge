@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit Excalidraw JSON + SVG for docs, plus assets/flowedge.gif."""
+"""Emit Excalidraw JSON, SVG, and GIF files for the documentation."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ import random
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
-ASSETS = ROOT / "assets"
 
 BG = "#FFF6DC"
 INK = "#2B2118"
@@ -928,10 +926,8 @@ def _gif() -> None:
 
     hold = frames[-1].copy()
     frames.extend([hold] * 4)
-    ASSETS.mkdir(parents=True, exist_ok=True)
-    out = ASSETS / "flowedge.gif"
+    out = HERE.parent / "flowedge.gif"
     frames[0].save(out, save_all=True, append_images=frames[1:], duration=160, loop=0, optimize=True)
-    (HERE.parent / "flowedge.gif").write_bytes(out.read_bytes())
     print(f"wrote {out}")
 
 
@@ -1018,10 +1014,8 @@ def _perf_gif() -> None:
 
     hold = [frames[-1]] * 12
     loop = frames + hold
-    ASSETS.mkdir(parents=True, exist_ok=True)
-    out = ASSETS / "matched_replay.gif"
+    out = HERE.parent / "matched_replay.gif"
     loop[0].save(out, save_all=True, append_images=loop[1:], duration=90, loop=0, optimize=True)
-    (HERE.parent / "matched_replay.gif").write_bytes(out.read_bytes())
     print(f"wrote {out}")
 
 
