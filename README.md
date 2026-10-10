@@ -1,10 +1,28 @@
+<div align="center">
+
+<img src="assets/surfingtux.png" width="480" alt="FlowEdge">
+
 # FlowEdge
 
-Fixed-memory C++23 inference for real-time robotics policies.
+**Low-latency inference for real-time robotics policies**
 
-[Documentation](https://reforcemind.github.io/FlowEdge/) | [Getting started](https://reforcemind.github.io/FlowEdge/getting-started.html) | [Python](https://reforcemind.github.io/FlowEdge/python-quickstart.html) | [Performance](docs/performance.md) | [Contributing](CONTRIBUTING.md)
+A C++23 inference runtime for robotics policies with fixed memory, deterministic execution, and explicit deadline handling. LeRobot still owns cameras, training, and the robot.
 
----
+<br/>
+
+<img alt="CPU" height="36" src="assets/cpu.svg">&nbsp;**CPU** &nbsp;&nbsp;·&nbsp;&nbsp; <img alt="NVIDIA CUDA" height="22" src="assets/nvidia.svg">&nbsp;**CUDA** &nbsp;&nbsp;·&nbsp;&nbsp; <img alt="Tenstorrent / TT-Metal" height="22" src="assets/tenstorrent.jpg">&nbsp;**Tenstorrent research track**
+
+[Documentation](https://reforcemind.github.io/FlowEdge/) &nbsp;&nbsp;·&nbsp;&nbsp; [Getting Started](https://reforcemind.github.io/FlowEdge/getting-started.html) &nbsp;&nbsp;·&nbsp;&nbsp; [Python](https://reforcemind.github.io/FlowEdge/python-quickstart.html) &nbsp;&nbsp;·&nbsp;&nbsp; [Performance](https://reforcemind.github.io/FlowEdge/performance.html) &nbsp;&nbsp;·&nbsp;&nbsp; [Contributing](CONTRIBUTING.md)
+
+</div>
+
+<div align="center">
+  <img src="assets/matched_replay.gif" width="720" alt="Matched replay loading, CUDA then CPU. FlowEdge CUDA 131 ms vs PyTorch 345 ms on GTX 1650; FlowEdge CPU 851 ms vs PyTorch 1409 ms, threads=1. First bar to 100% in each pair is faster. Not a 10 ms loop.">
+</div>
+
+<p align="center"><em>Same load → warmup (malloc 0) → DDIM. CUDA 131 vs 345 ms. CPU 851 vs 1409 ms.</em></p>
+
+## Overview
 
 FlowEdge loads converted policy weights into a pre-sized arena and runs the
 inference head in process. It is designed for bounded deployment paths where

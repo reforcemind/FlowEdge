@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" fill="none">
+  <title>CPU</title>
+  <rect x="6.2" y="6.2" width="11.6" height="11.6" rx="2.2" fill="#1B4B6B"/>
+  <rect x="8.4" y="8.4" width="7.2" height="7.2" rx="1.1" fill="#FFF6DC"/>
+  <rect x="9.6" y="9.6" width="2.1" height="2.1" rx="0.35" fill="#2EC4B6"/>
+  <rect x="12.3" y="9.6" width="2.1" height="2.1" rx="0.35" fill="#FF9F43"/>
+  <rect x="9.6" y="12.3" width="2.1" height="2.1" rx="0.35" fill="#FF8FAB"/>
+  <rect x="12.3" y="12.3" width="2.1" height="2.1" rx="0.35" fill="#7B6CF6"/>
+  <rect x="3.4" y="8.2" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="3.4" y="11.2" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="3.4" y="14.3" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="18.2" y="8.2" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="18.2" y="11.2" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="18.2" y="14.3" width="2.4" height="1.5" rx="0.4" fill="#1B4B6B"/>
+  <rect x="8.2" y="3.4" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+  <rect x="11.2" y="3.4" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+  <rect x="14.3" y="3.4" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+  <rect x="8.2" y="18.2" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+  <rect x="11.2" y="18.2" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+  <rect x="14.3" y="18.2" width="1.5" height="2.4" rx="0.4" fill="#1B4B6B"/>
+</svg>

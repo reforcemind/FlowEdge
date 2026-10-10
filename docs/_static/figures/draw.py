@@ -9,6 +9,7 @@ import random
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+README_ASSETS = HERE.parents[2] / "assets"
 
 BG = "#FFF6DC"
 INK = "#2B2118"
@@ -1014,8 +1015,10 @@ def _perf_gif() -> None:
 
     hold = [frames[-1]] * 12
     loop = frames + hold
-    out = HERE.parent / "matched_replay.gif"
+    README_ASSETS.mkdir(parents=True, exist_ok=True)
+    out = README_ASSETS / "matched_replay.gif"
     loop[0].save(out, save_all=True, append_images=loop[1:], duration=90, loop=0, optimize=True)
+    (HERE.parent / "matched_replay.gif").write_bytes(out.read_bytes())
     print(f"wrote {out}")
 
 
