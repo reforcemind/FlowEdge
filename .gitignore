@@ -13,3 +13,5 @@ __pycache__/
 /data/*.json
 /data/*.csv
 /research/
+/tmp/
+/texput.log

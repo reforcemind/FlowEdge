@@ -22,68 +22,28 @@ A C++23 inference runtime for robotics policies with fixed memory, deterministic
 
 <p align="center"><em>Same load → warmup (malloc 0) → DDIM. CUDA 131 vs 345 ms. CPU 851 vs 1409 ms.</em></p>
 
-## 📰 News
+## Overview
 
-**🗓️ September 2026**
+FlowEdge loads converted policy weights into a pre-sized arena and runs the
+inference head in process. It is designed for bounded deployment paths where
+allocation behavior, deadlines, and missed-action handling must be explicit.
 
-- 📦 **19** — Repo lives at [reforcemind/FlowEdge](https://github.com/reforcemind/FlowEdge). [v0.1.2](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2) CPU wheels are `flowedge-0.1.2-*`. Not PyPI. CUDA stays a source backend.
-- ⚡ **19** — Split-K CUDA Conv1D on horizon 8 ([#183](https://github.com/reforcemind/FlowEdge/pull/183)). Published GTX 1650 matched DDIM replay stays **131 vs 345 ms** vs PyTorch CUDA. Not a 10 ms loop.
-- 🚀 **18** — Device-resident CUDA after load: flow head ([#167](https://github.com/reforcemind/FlowEdge/pull/167)), Diffusion Policy U-Net + DDIM ([#168](https://github.com/reforcemind/FlowEdge/pull/168), [#169](https://github.com/reforcemind/FlowEdge/pull/169)), Mamba ([#173](https://github.com/reforcemind/FlowEdge/pull/173)). Same-process CUDA vs PyTorch CUDA replay ([#170](https://github.com/reforcemind/FlowEdge/pull/170)). LeRobot `--device cuda` period rollouts, same `--on-miss` ([#171](https://github.com/reforcemind/FlowEdge/pull/171)).
-- 📦 **17** — [v0.1.1](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.1) CPU wheels for CPython 3.10–3.12 (manylinux x86_64/aarch64, Windows AMD64, macOS ARM). Not on PyPI. ⏱️ `--on-miss hold|drop|raise` in the LeRobot adapter ([#152](https://github.com/reforcemind/FlowEdge/pull/152)). CPU fair-compare Diffusion Policy remains **851 vs 1409 ms**, `threads=1`.
+- **Core** runs Mamba with flow matching or a Diffusion Policy U-Net with
+  DDIM/DDPM.
+- **LeRobot integration** keeps cameras, preprocessing, training, joint limits,
+  and emergency stop outside the runtime.
+- **Relay** is optional local IPC for deadline-aware jobs and action delivery.
+- **Backends** are CPU and source-built CUDA. TT-Metal remains a research track.
+- **APIs** are available for C, C++, and Python.
 
-🏷️ [Releases](https://github.com/reforcemind/FlowEdge/releases) &nbsp;·&nbsp; 📈 [Performance](docs/performance.md)
+FlowEdge is not a trainer, general graph runtime, robot driver, or safety
+controller.
 
-***
+## Installation
 
-## The problem
-
-A robot loop is a deadline. At 100 Hz the motors want a new command every 10 ms. If this sample is late, they still need a defined action — hold the last one, skip the send, or fault — and that choice has to be replayable. `--on-miss hold|drop|raise` is that contract.
-
-On the matched Diffusion Policy replay FlowEdge is faster than PyTorch: CPU **851 vs 1409 ms**, CUDA **131 vs 345 ms**. That is the fair compare. The 10 ms figure is the robot’s tick, not this checkpoint’s p50.
-
-PyTorch, LeRobot, TensorRT, and generic model servers are good at training or at running arbitrary graphs. They are a weak fit as the thing inside that loop: heap allocations after warmup, a dispatcher, a growing KV cache, and a p50 that is not a miss count. Training code also tends to own cameras, normalization, and e-stop, which do not belong in the inference kernel.
-
-## What FlowEdge does
-
-Convert a pinned checkpoint once. Load it into one bump-allocated arena (weights, scratch, solver state). On each tick the engine samples **one of two policy heads**:
-
-**Flow matching** — Mamba (or your encoder) produces a condition \(c\). The head is a velocity field \(v(x,t \mid c)\). Integrate a short ODE from noise \(x_0\) to action \(x_1\) with Euler / Heun / RK4. Cost is NFE × one velocity net. No RNG.
-
-**Diffusion Policy** — LeRobot still encodes RGB. Core runs the Conv1D U-Net and DDIM (seeded DDPM for reference) on the action horizon. Cost is DDIM steps × one U-Net. Usually more NFE than a short flow ODE, which is why flow matching is the default and DP is the other first-class head when that is the trained checkpoint.
-
-The engine sizes RSS at load and does not malloc on the supported hot path. Same observation, same action. If the period is missed, `--on-miss hold|drop|raise` is explicit. Encoders, joint limits, and e-stop stay in LeRobot (or your adapter). Optional Relay is local IPC around Core, not the default DP path.
-
-<div align="center">
-  <img src="assets/flowedge.gif" width="720" alt="Flow matching: Euler steps from noise x0 to action x1, malloc = 0">
-</div>
-
-<div align="center">
-  <img src="docs/_static/figures/purpose.svg" width="920" alt="Hardware runs the loop, FlowEdge runs the policy, LeRobot trains and drives the robot">
-</div>
-
-<div align="center">
-  <img src="docs/_static/figures/big-flow.svg" width="920" alt="Whole FlowEdge flow: convert, load arena, Mamba+flow or LeRobot encoder+DP, period, motors">
-</div>
-
-<div align="center">
-  <img src="docs/_static/figures/relay.svg" width="920" alt="Optional Relay: sensor or VLA to shared-memory rings to Core to controller, same miss contract">
-</div>
-
-<div align="center">
-  <img src="docs/_static/figures/workflow.svg" width="920" alt="convert, load arena, sample flow or DDIM, period, act">
-</div>
-
-## Why this, not the usual stack
-
-<div align="center">
-  <img src="docs/_static/figures/why-this.svg" width="920" alt="Instead of PyTorch-in-the-loop, TensorRT/ONNX, a growing KV cache, long DDIM, or model servers: FlowEdge runs this flow or DP head in a sized arena with a miss contract. Not a trainer, graph compiler, or safety controller. DP p50 851 vs 1409 ms on CPU, not a 10 ms loop.">
-</div>
-
-Matched **Diffusion Policy** PushT replay, CPU, `threads=1`: policy p50 **851 ms** vs LeRobot/PyTorch **1409 ms**. It is not a 10 ms loop. On GTX 1650, the same matched replay is **131 ms** vs PyTorch CUDA **345 ms**. **Flow matching** is gated by ULP vs the same PyTorch reference (~1e-6 rel), not a published policy p50. Evidence: [performance](docs/performance.md).
-
-## First run
-
-CPU wheels for CPython 3.10–3.12 (manylinux x86_64/aarch64, Windows AMD64, macOS ARM) are assets on [v0.1.2](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2). They are **not** on PyPI. Filenames are `flowedge-0.1.2-*`. CUDA is not in the wheel. The older [v0.1.1](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.1) tag still has `flowedge-0.1.0-*` files.
+CPU wheels for CPython 3.10-3.12 are attached to the
+[v0.1.2 release](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2).
+They are not published on PyPI, and CUDA is not included in the wheels.
 
 ```bash
 python -m pip install flowedge-0.1.2-*.whl
@@ -93,41 +53,83 @@ curl -L "https://huggingface.co/ReForceMind/mamba_flow/resolve/main/mamba_flow.s
 python examples/core/flow_sample.py models/mamba_flow.safetensors euler 10
 ```
 
-Those wheels are CPU (v0.1.2, not PyPI). CUDA is `FLOWEDGE_BACKEND=cuda` with `nvcc` on WSL or MSVC ([CUDA](docs/architecture/cuda.md)). A 4 GB card that cannot allocate the U-Net keeps CPU kernels instead of failing load; check `Engine.cuda_resident`.
+### From source
 
-From source (C++23, CMake 3.21+):
+FlowEdge requires CMake 3.21+ and a C++23 compiler.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+git clone https://github.com/reforcemind/FlowEdge.git
+cd FlowEdge
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release -j
 ./build/flow_sample models/mamba_flow.safetensors euler 10
 ```
 
-LeRobot Diffusion Policy (plugin + fake robot or SO-100 shim):
+For CUDA, configure with `-DFLOWEDGE_BACKEND=cuda`. This requires `nvcc`; the
+published wheels remain CPU-only. See the [CUDA guide](docs/architecture/cuda.md).
+
+## Diffusion Policy and LeRobot
+
+The LeRobot plugin converts a pinned policy and runs a bounded rollout. A missed
+period has an explicit `hold`, `drop`, or `raise` outcome.
 
 ```bash
 python -m pip install -e integrations/lerobot
 python -m flowedge_dev pipeline convert models/diffusion_pusht \
   models/diffusion_pusht.flowedge.safetensors --arch diffusion
-python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetensors \
+python -m flowedge_dev pipeline rollout \
+  models/diffusion_pusht.flowedge.safetensors \
   --steps 20 --threads 4 --period-ms 10 --on-miss hold
 ```
 
-Relay (optional IPC — not on the DP replay path):
+The period is a requested control interval, not a claim that the policy meets
+it. Limits and emergency stop remain the robot adapter's responsibility.
+
+## Relay
+
+Relay is optional and is not used by the in-process Diffusion Policy replay.
 
 ```bash
 cmake -S . -B build-relay -DCMAKE_BUILD_TYPE=Release -DFLOWEDGE_RELAY=ON
 cmake --build build-relay -j
-FLOWEDGE_BUILD_DIR=build-relay ./scripts/relay_demo.sh models/mamba_flow.safetensors
+FLOWEDGE_BUILD_DIR=build-relay ./scripts/relay_demo.sh \
+  models/mamba_flow.safetensors
 ```
 
-`Engine.sample(..., method="euler"|"heun"|"rk4")`. More Python: [python-quickstart](docs/python-quickstart.md).
+## Performance
 
-<div align="center">
-  <img src="docs/_static/figures/status.svg" width="920" alt="Implementation status: backends, backbones, heads, models, precisions">
-</div>
+On the published matched PushT Diffusion Policy replay, FlowEdge measured
+851 ms versus 1409 ms for PyTorch on CPU (`threads=1`), and 131 ms versus
+345 ms on a GTX 1650 CUDA run. These are checkpoint-specific policy medians,
+not a 10 ms control-loop result. Commands, hardware, and limitations are in
+[Performance](docs/performance.md).
+
+## Verification
+
+The full merge gate runs locally because checkpoint parity is not part of the
+normal GitHub Actions test job.
+
+```bash
+./scripts/verify_all.sh models/mamba_flow.safetensors
+```
+
+```powershell
+powershell -File scripts/verify_local.ps1 -BuildDir build-win-clang
+```
+
+Focused commands are available through the maintainer CLI:
 
 ```bash
 python -m flowedge_dev --help
+python -m flowedge_dev verify delivery smoke
 ```
 
-Local merge gate: `scripts/verify_all.sh` or `scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
+See the [verification contract](docs/guides/verification.md) for the exact
+coverage and evidence boundaries.
+
+## Contributing
+
+Bug fixes, tested model support, measurable kernel improvements, and simpler
+implementations are welcome. Keep changes focused, add regression coverage,
+and include same-host measurements for performance claims. See
+[CONTRIBUTING.md](CONTRIBUTING.md).

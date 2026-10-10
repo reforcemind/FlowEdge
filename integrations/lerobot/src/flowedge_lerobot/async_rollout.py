@@ -13,6 +13,7 @@ from time import perf_counter_ns, sleep
 
 import numpy as np
 
+from .delivery_trace import DeliveryTrace, Origin
 from .rollout import MAX_ROLLOUT_STEPS
 
 
@@ -50,6 +51,9 @@ def run_async_rollout(
     selector=None,
     clock=perf_counter_ns,
     wait=sleep,
+    executor_factory=None,
+    event_sink=None,
+    run_id=None,
 ):
     """predict(history, plan, seed) returns a complete executable chunk.
 
@@ -77,9 +81,14 @@ def run_async_rollout(
     pending_observation_ns = 0
     completed = 0
     boot = clock()
-    executor = ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="flowedge-inference"
+    executor_factory = (
+        ThreadPoolExecutor if executor_factory is None else executor_factory
     )
+    executor = executor_factory(max_workers=1, thread_name_prefix="flowedge-inference")
+    trace = DeliveryTrace(event_sink, run_id)
+    tracing = event_sink is not None
+    status = "ok"
+    pending_request = None
 
     def infer(frames, plan, request_seed, dispatched_ns=None):
         started = clock() if dispatched_ns is None else dispatched_ns
@@ -95,14 +104,33 @@ def run_async_rollout(
         return chunk, max(1, clock() - started)
 
     try:
+        trace.emit(
+            "run_begin",
+            profile="async",
+            steps=steps,
+            horizon=action_steps,
+            refill_threshold=refill_threshold,
+            fixed_plan=selector is None,
+            observations=["origin", "phase", "step_outcome", "send", "stop"],
+        )
         robot.reset()
         first = deepcopy(robot.observe())
         first_observation_ns = clock()
         history.extend([first] * observation_steps)
         # Startup has no running action queue. Use the caller's declared fixed plan.
+        trace.emit("submit", -1, request=0, base=0, length=action_steps)
         first_chunk, duration = infer(tuple(history), fixed_plan, seed)
+        trace.emit("complete", -1, request=0)
         shape = first_chunk.shape[1:]
-        actions.extend((a.copy(), first_observation_ns) for a in first_chunk)
+        actions.extend(
+            (
+                a.copy(),
+                first_observation_ns,
+                Origin("policy", 0, 0, slot) if tracing else None,
+            )
+            for slot, a in enumerate(first_chunk)
+        )
+        trace.emit("accept", -1, request=0, offset=0, length=len(actions))
         calls += 1
         latencies.append(duration / 1e6)
         plan_ids.append(fixed_plan["id"])
@@ -111,6 +139,7 @@ def run_async_rollout(
         start = clock()
         startup_ms = (start - boot) / 1e6
         for tick in range(steps):
+            trace.emit("step_begin", tick)
             target = start + tick * period_ns
             remaining = target - clock()
             if remaining > 0:
@@ -118,7 +147,9 @@ def run_async_rollout(
             observation_ns = clock()
             observation = deepcopy(robot.observe())
             history.append(observation)
-            if pending is not None and pending.done():
+            ready = pending is not None and pending.done()
+            trace.emit("ready_check", tick, request=pending_request, ready=ready)
+            if ready:
                 chunk, duration = pending.result()
                 if chunk.shape[1:] != shape:
                     raise ValueError("action dimension changed during rollout")
@@ -126,18 +157,40 @@ def run_async_rollout(
                 if selector is not None:
                     selector.observe(pending_plan, duration)
                 elapsed_actions = tick - pending_tick
+                trace.emit("complete", tick, request=pending_request)
                 if elapsed_actions < action_steps:
                     actions.clear()
                     actions.extend(
-                        (a.copy(), pending_observation_ns)
-                        for a in chunk[elapsed_actions:]
+                        (
+                            a.copy(),
+                            pending_observation_ns,
+                            Origin("policy", pending_request, pending_tick, slot)
+                            if tracing
+                            else None,
+                        )
+                        for slot, a in enumerate(
+                            chunk[elapsed_actions:], elapsed_actions
+                        )
+                    )
+                    trace.emit(
+                        "accept",
+                        tick,
+                        request=pending_request,
+                        offset=elapsed_actions,
+                        length=len(actions),
                     )
                 else:
                     dropped += 1
+                    trace.emit(
+                        "discard", tick, request=pending_request, reason="expired"
+                    )
                 pending = None
+                pending_request = None
             if actions:
-                action, source_ns = actions.popleft()
+                action, source_ns, origin = actions.popleft()
                 ages.append((clock() - source_ns) / 1e6)
+                if tracing:
+                    trace.origin("dequeue", tick, origin)
             else:
                 underruns += 1
                 action = np.asarray(fallback(observation), dtype=np.float32)
@@ -145,9 +198,16 @@ def run_async_rollout(
                     raise ValueError(
                         "fallback must return a finite action of the configured shape"
                     )
-            robot.send_action(action)
+                origin = Origin("fallback", -1, tick, 0) if tracing else None
+                if tracing:
+                    trace.origin("fallback", tick, origin)
+            if tracing:
+                trace.send(robot, action, tick, origin)
+            else:
+                robot.send_action(action)
             delivery_times.append(clock())
             completed += 1
+            trace.emit("step_end", tick, outcome="send")
             if clock() > target + period_ns:
                 misses += 1
             if getattr(robot, "done", False):
@@ -167,21 +227,40 @@ def run_async_rollout(
                 else:
                     pending_plan, pending_tick = plan, tick
                     pending_observation_ns = observation_ns
+                    pending_request = calls
+                    trace.emit(
+                        "submit",
+                        tick,
+                        request=pending_request,
+                        base=tick,
+                        length=action_steps,
+                    )
                     pending = executor.submit(
                         infer, deepcopy(tuple(history)), plan, seed + calls, clock()
                     )
                     calls += 1
                     plan_ids.append(plan["id"])
         elapsed_ms = (clock() - start) / 1e6
+    except BaseException:
+        status = "error"
+        trace.emit("fault", completed)
+        raise
     finally:
         try:
-            robot.stop()
+            try:
+                trace.stop(robot)
+            finally:
+                # Stop delivery before waiting for an in-flight bounded inference call.
+                executor.shutdown(wait=True, cancel_futures=True)
+            if status == "ok" and pending is not None and not pending.cancelled():
+                # A terminal result may fail, but cannot cause another send.
+                pending.result()
+                trace.emit("drain", request=pending_request)
+        except BaseException:
+            status = "error"
+            raise
         finally:
-            # Stop delivery before waiting for an in-flight bounded inference call.
-            executor.shutdown(wait=True, cancel_futures=True)
-    if pending is not None and not pending.cancelled():
-        # Do not hide errors merely because the episode ended during inference.
-        pending.result()
+            trace.emit("run_end", status=status, completed=completed)
     p50, p95, p99 = np.percentile(latencies, (50, 95, 99))
     jitter = np.abs(np.diff(delivery_times) - period_ns) / 1e6
     return AsyncRolloutResult(

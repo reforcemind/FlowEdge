@@ -6,8 +6,10 @@ Excalidraw sources (`.excalidraw`) plus GitHub/Sphinx SVGs. GitHub does not rend
 python docs/_static/figures/draw.py
 ```
 
-Also writes `assets/flowedge.gif` (flow-matching ODE) and `assets/matched_replay.gif`
-(one loop: CUDA 131 vs 345 ms stacked over CPU 851 vs 1409 ms).
+Also writes `docs/_static/flowedge.gif` (flow-matching ODE). The replay GIF is
+written to `assets/matched_replay.gif` for the README and copied to
+`docs/_static/matched_replay.gif` for the docs site (one loop: CUDA 131 vs
+345 ms stacked over CPU 851 vs 1409 ms).
 `python docs/_static/figures/draw.py perf` regenerates the replay GIF.
 
-`purpose.svg` is Hardware / FlowEdge / LeRobot. `big-flow.svg` is convert → arena → flow or DP → period → motors (no backends; those live on `status.svg`). `relay.svg` is the optional IPC path under that flow. `policies.svg` is the two heads. `why-this.svg` is the README “usual stack” table. Tenstorrent and Metal are one backend (TT-Metal).
+`purpose.svg` is Hardware / FlowEdge / LeRobot. `big-flow.svg` is convert → arena → flow or DP → period → motors (no backends; those live on `status.svg`). `relay.svg` is the optional IPC path under that flow. `policies.svg` is the two heads. `why-this.svg` is the runtime comparison table. Tenstorrent and Metal are one backend (TT-Metal).

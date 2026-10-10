@@ -30,6 +30,7 @@ _COMMANDS: dict[str, dict[str, Path]] = {
         "diffusion-public": ROOT / "tools/verification/verify_diffusion_public.py",
         "smolvla": ROOT / "tools/verification/verify_smolvla_hybrid.py",
         "transformer": ROOT / "tools/verification/verify_transformer_reference.py",
+        "delivery": ROOT / "tools/verification/verify_delivery.py",
     },
     "pipeline": {
         "convert": ROOT / "convert/convert.py",
@@ -43,7 +44,7 @@ _HELP = """FlowEdge maintainer CLI (checkout only; not shipped in the runtime wh
 
 groups:
   bench      policy | mix | budgets | hybrid | artifact
-  verify     ulp | diffusion | head | diffusion-public | smolvla | transformer
+  verify     ulp | diffusion | head | diffusion-public | smolvla | transformer | delivery
   pipeline   convert | inspect | rollout | capture
 
 Everyday:

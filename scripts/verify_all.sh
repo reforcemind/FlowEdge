@@ -119,6 +119,8 @@ if [[ "$PYTHON_OPTION" == ON ]]; then
     PYTHONPATH="$ROOT/integrations/lerobot/src:$PYTHONPATH" \
       "$PYTHON" -m unittest discover -s "$ROOT/integrations/lerobot/tests" -v
     (cd "$ROOT" && "$PYTHON" -m flowedge_dev verify head "$BUILD_DIR")
+    (cd "$ROOT" && "$PYTHON" -m flowedge_dev verify delivery smoke \
+      --output "$BUILD_DIR/delivery-contract-smoke.json")
   else
     echo "note: Python extension built; numpy+safetensors verification dependencies unavailable"
   fi

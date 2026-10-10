@@ -79,6 +79,8 @@ if (-not (Test-Path $ModelPath)) {
 $HasNumpySafetensors = Test-PythonMods $Python "import numpy, safetensors"
 $HasTorch = Test-PythonMods $Python "import torch, numpy, safetensors"
 if ($HasNumpySafetensors) {
+    & $Python -m flowedge_dev verify delivery smoke --output "$Build/delivery-contract-smoke.json"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & $Python -m flowedge_dev verify head $BuildDir
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } else {
