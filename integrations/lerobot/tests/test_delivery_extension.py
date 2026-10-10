@@ -18,14 +18,21 @@ from tools.delivery_check.extension import (
 )
 from tools.delivery_check.payload_cost import route, tape
 
+PROTOCOL = ROOT / "papers/action-delivery/extension-protocol.json"
+
 
 class DeliveryExtensionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        protocol = json.loads(
-            (ROOT / "papers/action-delivery/extension-protocol.json").read_text()
-        )
-        cls.mutations = {m["name"]: m for m in protocol["mutations"]}
+        cls.mutations = {}
+        if PROTOCOL.is_file():
+            protocol = json.loads(PROTOCOL.read_text(encoding="utf-8"))
+            cls.mutations = {m["name"]: m for m in protocol["mutations"]}
+
+    def mutation(self, name):
+        if not self.mutations:
+            self.skipTest("requires frozen action-delivery protocol")
+        return self.mutations[name]
 
     def test_projection_and_wrong_implementation_origin(self):
         case = execute_async()
@@ -69,7 +76,7 @@ class DeliveryExtensionTests(unittest.TestCase):
                     project_trace(changed, 4, 6)
 
     def test_trace_can_lie_about_stop(self):
-        runner = compile_mutation(self.mutations["async_suppress_actual_stop"])
+        runner = compile_mutation(self.mutation("async_suppress_actual_stop"))
         original = execute_async()
         case = execute_async(runner=runner)
         self.assertEqual(case["events"], original["events"])
@@ -81,7 +88,7 @@ class DeliveryExtensionTests(unittest.TestCase):
         )
 
     def test_trace_can_lie_about_held_payload(self):
-        runner = compile_mutation(self.mutations["sync_uncommitted_hold"])
+        runner = compile_mutation(self.mutation("sync_uncommitted_hold"))
         original = execute_sync((0, 2_000_000))
         case = execute_sync((0, 2_000_000), runner=runner)
         self.assertEqual(case["events"], original["events"])
@@ -90,7 +97,7 @@ class DeliveryExtensionTests(unittest.TestCase):
         self.assertEqual(case["boundary"]["reason"], "tensor_origin_disagreement")
 
     def test_private_early_assignment_is_delivery_equivalent_on_send_failure(self):
-        runner = compile_mutation(self.mutations["sync_early_private_commit"])
+        runner = compile_mutation(self.mutation("sync_early_private_commit"))
         for failure in (0, 1, 2):
             self.assertEqual(
                 execute_sync((0, 0, 0), fail_send=failure),
@@ -99,7 +106,7 @@ class DeliveryExtensionTests(unittest.TestCase):
 
     def test_mutation_sites_fail_closed_on_source_drift(self):
         description = dict(
-            self.mutations["async_pop_tail"], old="missing source pattern"
+            self.mutation("async_pop_tail"), old="missing source pattern"
         )
         with self.assertRaisesRegex(ValueError, "site drift"):
             compile_mutation(description)
@@ -205,6 +212,12 @@ class DeliveryExtensionTests(unittest.TestCase):
         # Emails are not rewritten by anonymize_json_bytes; the residual
         # scan must still report them so build() can reject the payload.
         self.assertEqual(identity_token_matches(sanitized), [sample_email])
+
+        missing = [
+            name for name in INCLUDE if not resolve_source(ROOT, name).is_file()
+        ]
+        if missing:
+            self.skipTest("requires complete action-delivery review evidence")
 
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)

@@ -191,6 +191,30 @@ def main() -> int:
                 f"archive: {details}"
             )
 
+    required_evidence = (
+        ROOT / "papers/action-delivery/extension-protocol.json",
+        ROOT / "papers/action-delivery/heldout-protocol.json",
+        ROOT / "papers/action-delivery/heldout-protocol-exercising.json",
+        ROOT / "papers/action-delivery/results/development.json",
+        ROOT / "papers/action-delivery/results/extension-linux.json",
+        ROOT / "papers/action-delivery/results/heldout-posthoc-windows.json",
+        ROOT / "papers/action-delivery/results/tlc.json",
+        ROOT / "papers/action-delivery/tla/Delivery.tla",
+        ROOT / "papers/action-delivery/tla/Delivery.cfg",
+        ROOT / "papers/action-delivery/tla/Mutant.cfg",
+    )
+    missing_evidence = [
+        path.relative_to(ROOT).as_posix()
+        for path in required_evidence
+        if not path.is_file()
+    ]
+    if missing_evidence:
+        parser.error(
+            "full reproduction requires the review archive or companion "
+            "papers/action-delivery evidence; missing: "
+            + ", ".join(missing_evidence)
+        )
+
     expected = json.loads((HERE / "expected.json").read_text(encoding="utf-8"))
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"

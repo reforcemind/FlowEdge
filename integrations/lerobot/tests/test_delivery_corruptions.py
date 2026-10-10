@@ -8,7 +8,10 @@ sys.path.insert(0, str(ROOT))
 
 from tools.delivery_check.corruptions import CORRUPTIONS, evaluate  # noqa: E402
 
+PROTOCOL = ROOT / "papers/action-delivery/extension-protocol.json"
 
+
+@unittest.skipUnless(PROTOCOL.is_file(), "requires frozen action-delivery protocol")
 class DeliveryCorruptionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

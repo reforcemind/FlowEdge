@@ -1,8 +1,11 @@
 # Action-delivery study reproduction
 
-This directory is the entry point for a clean checkout or the review archive.
-It reproduces the deterministic, CPU-only portion of the study without a model
-checkpoint, Java, a robot, or network access.
+This directory is the entry point for the review archive. In a repository
+checkout, the full study also requires the companion `papers/action-delivery`
+evidence, which is intentionally maintained outside the source branch. The
+review archive includes that frozen evidence and reproduces the deterministic,
+CPU-only portion of the study without a model checkpoint, Java, a robot, or
+network access.
 
 ## Supported environment
 

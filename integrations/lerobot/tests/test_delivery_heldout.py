@@ -20,6 +20,27 @@ from tools.delivery_check.heldout import (
 )
 from tools.delivery_check.observation import analyze as analyze_observations
 
+EVIDENCE = ROOT / "papers/action-delivery"
+HELDOUT_PROTOCOL = EVIDENCE / "heldout-protocol.json"
+EXERCISING_PROTOCOL = EVIDENCE / "heldout-protocol-exercising.json"
+BASELINE_EVIDENCE = all(
+    path.is_file()
+    for path in (
+        EVIDENCE / "results/tlc.json",
+        EVIDENCE / "tla/Delivery.tla",
+        EVIDENCE / "tla/Delivery.cfg",
+        EVIDENCE / "tla/Mutant.cfg",
+    )
+)
+OBSERVATION_EVIDENCE = all(
+    path.is_file()
+    for path in (
+        EVIDENCE / "results/development.json",
+        EVIDENCE / "results/extension-linux.json",
+        EVIDENCE / "results/heldout-posthoc-windows.json",
+    )
+)
+
 
 class HeldOutProtocolTests(unittest.TestCase):
     def test_selection_is_deterministic_and_disjoint(self):
@@ -38,10 +59,11 @@ class HeldOutProtocolTests(unittest.TestCase):
             {"async", "sync"},
         )
 
+    @unittest.skipUnless(
+        HELDOUT_PROTOCOL.is_file(), "requires frozen held-out protocol"
+    )
     def test_frozen_protocol_evaluation_retains_survivor(self):
-        result = evaluate_protocol(
-            ROOT / "papers/action-delivery/heldout-protocol.json"
-        )
+        result = evaluate_protocol(HELDOUT_PROTOCOL)
         self.assertTrue(result["expectations_met"])
         self.assertEqual(
             result["outcome_counts"],
@@ -77,11 +99,13 @@ class HeldOutProtocolTests(unittest.TestCase):
             },
         )
 
+    @unittest.skipUnless(
+        HELDOUT_PROTOCOL.is_file() and EXERCISING_PROTOCOL.is_file(),
+        "requires frozen held-out protocols",
+    )
     def test_exercising_domain_accepts_live_chunks_and_keeps_refill_gap(self):
         frozen = json.loads(
-            (ROOT / "papers/action-delivery/heldout-protocol.json").read_text(
-                encoding="utf-8"
-            )
+            HELDOUT_PROTOCOL.read_text(encoding="utf-8")
         )
         derived = exercising_protocol(frozen)
         self.assertEqual(
@@ -89,9 +113,7 @@ class HeldOutProtocolTests(unittest.TestCase):
             [item["name"] for item in frozen["mutations"]],
         )
         self.assertEqual(derived["async_domain"]["horizons"], [8, 12])
-        result = evaluate_protocol(
-            ROOT / "papers/action-delivery/heldout-protocol-exercising.json"
-        )
+        result = evaluate_protocol(EXERCISING_PROTOCOL)
         async_domain = result["domain_characterization"]["async"]
         self.assertGreater(async_domain["live_accept_cases"], 0)
         self.assertGreater(async_domain["distinct_observed_executions"], 5)
@@ -110,6 +132,7 @@ class HeldOutProtocolTests(unittest.TestCase):
         self.assertEqual(result["outcome_counts"]["observable_detected"], 3)
         self.assertEqual(result["outcome_counts"]["cases"], 306)
 
+    @unittest.skipUnless(BASELINE_EVIDENCE, "requires frozen TLA+ evidence")
     def test_matched_baseline_uses_verified_stored_tlc_when_jar_is_absent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -118,7 +141,7 @@ class HeldOutProtocolTests(unittest.TestCase):
                 jar=root / "missing-tla2tools.jar",
                 repeat=1,
                 skip_tlc=False,
-                stored=ROOT / "papers/action-delivery/results/tlc.json",
+                stored=EVIDENCE / "results/tlc.json",
             )
         self.assertTrue(result["expectations_met"])
         self.assertEqual(result["general_tool"]["availability"], "stored")
@@ -132,8 +155,11 @@ class HeldOutProtocolTests(unittest.TestCase):
             result["effort_evidence"]["conclusion"],
         )
 
+    @unittest.skipUnless(
+        OBSERVATION_EVIDENCE, "requires frozen observation evidence"
+    )
     def test_observation_adequacy_retains_the_heldout_gap(self):
-        results = ROOT / "papers/action-delivery/results"
+        results = EVIDENCE / "results"
         result = analyze_observations(
             results / "development.json",
             results / "extension-linux.json",
