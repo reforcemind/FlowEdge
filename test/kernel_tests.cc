@@ -47,6 +47,32 @@ TEST(Matmul, MatchesNaive)
   }
 }
 
+TEST(Matmul, LargeReductionBlocksAndTailsMatchDoubleReference)
+{
+  std::vector<fe::Task> ring(8uz);
+  std::vector<std::size_t> sequence(8uz);
+  std::vector<std::jthread> workers(4uz);
+  fe::ThreadPool pool{ring, sequence, workers, 4u};
+  for (const std::size_t rows : {4uz, 8uz}) {
+    for (const std::size_t width : {4096uz, 4103uz, 10240uz}) {
+      constexpr std::size_t outputs = 17uz;
+      const auto input = seq(rows * width, 0.03F, -0.7F);
+      const auto weight = seq(outputs * width, 0.013F, 0.1F);
+      std::vector<float> got(rows * outputs), threaded(got.size());
+      fe::matmul(input, weight, got, rows, width, outputs);
+      fe::matmul(input, weight, threaded, rows, width, outputs, &pool);
+      for (std::size_t r = 0; r < rows; ++r)
+        for (std::size_t o = 0; o < outputs; ++o) {
+          double expected = 0.0;
+          for (std::size_t k = 0; k < width; ++k)
+            expected += static_cast<double>(input[r * width + k]) * weight[o * width + k];
+          EXPECT_NEAR(got[r * outputs + o], expected, 5e-4 + std::fabs(expected) * 1e-5);
+          EXPECT_FLOAT_EQ(threaded[r * outputs + o], got[r * outputs + o]);
+        }
+    }
+  }
+}
+
 TEST(ThreadPool, ParallelForCompletesAllSlices)
 {
   std::vector<fe::Task> ring(8uz);

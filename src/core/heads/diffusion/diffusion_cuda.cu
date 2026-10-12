@@ -1,5 +1,4 @@
 #include "heads/diffusion/diffusion_cuda.h"
-
 #include "kernels/cuda/kernels_cuda_api.h"
 
 namespace fe {
@@ -226,26 +225,22 @@ bool CudaDiffusionResident::residual_forward(float* input, std::size_t length,
   cuda_ops::conv1d_device(input, weights.conv1.weight, weights.conv1.bias, first, in_channels,
                           out_channels, length, length, weights.conv1.kernel, 1,
                           weights.conv1.kernel / 2);
-  cuda_ops::group_norm_device(first, weights.norm1.weight, weights.norm1.bias, out_channels, length,
-                              groups_, kGroupNormEps);
-  cuda_ops::mish_device(first, out_channels * length);
   cuda_ops::matmul_f32_device(condition_mish, weights.film.weight, modulation, 1,
                               weights.film.in_features, weights.film.out_features);
   cuda_ops::add_bias_device(modulation, weights.film.bias, weights.film.out_features);
-  cuda_ops::film_device(first, modulation, modulation + out_channels, out_channels, length);
+  cuda_ops::group_norm_mish_device(first, weights.norm1.weight, weights.norm1.bias, out_channels,
+                                   length, groups_, kGroupNormEps, modulation);
   cuda_ops::conv1d_device(first, weights.conv2.weight, weights.conv2.bias, output, out_channels,
                           out_channels, length, length, weights.conv2.kernel, 1,
                           weights.conv2.kernel / 2);
-  cuda_ops::group_norm_device(output, weights.norm2.weight, weights.norm2.bias, out_channels, length,
-                              groups_, kGroupNormEps);
-  cuda_ops::mish_device(output, out_channels * length);
-  if (weights.identity_residual) {
-    cuda_ops::add_scaled_device(output, input, 1.0F, out_channels * length);
-  } else {
+  const float* residual = input;
+  if (!weights.identity_residual) {
     cuda_ops::conv1d_device(input, weights.residual.weight, weights.residual.bias, first,
                             in_channels, out_channels, length, length, 1, 1, 0);
-    cuda_ops::add_scaled_device(output, first, 1.0F, out_channels * length);
+    residual = first;
   }
+  cuda_ops::group_norm_mish_device(output, weights.norm2.weight, weights.norm2.bias, out_channels,
+                                   length, groups_, kGroupNormEps, nullptr, residual);
   bump.used = mark;
   return true;
 }
@@ -319,7 +314,8 @@ bool CudaDiffusionResident::denoise_from_x(float timestep) noexcept
     if (skip_lengths[skip_index] != length || skip == nullptr)
       return false;
     float* const concatenated = bump_alloc(bump, x_n + x_n);
-    if (concatenated == nullptr || !cuda_ops::device_copy_d2d(concatenated, x, x_n * sizeof(float)) ||
+    if (concatenated == nullptr ||
+        !cuda_ops::device_copy_d2d(concatenated, x, x_n * sizeof(float)) ||
         !cuda_ops::device_copy_d2d(concatenated + x_n, skip, x_n * sizeof(float)))
       return false;
     x = concatenated;
@@ -350,11 +346,10 @@ bool CudaDiffusionResident::denoise_from_x(float timestep) noexcept
   float* const result = bump_alloc(bump, values_);
   if (final == nullptr || result == nullptr)
     return false;
-  cuda_ops::conv1d_device(x, final_conv_.weight, final_conv_.bias, final, channels, channels, length,
-                          length, final_conv_.kernel, 1, final_conv_.kernel / 2);
-  cuda_ops::group_norm_device(final, final_norm_.weight, final_norm_.bias, channels, length,
-                              kFinalNormGroups, kGroupNormEps);
-  cuda_ops::mish_device(final, channels * length);
+  cuda_ops::conv1d_device(x, final_conv_.weight, final_conv_.bias, final, channels, channels,
+                          length, length, final_conv_.kernel, 1, final_conv_.kernel / 2);
+  cuda_ops::group_norm_mish_device(final, final_norm_.weight, final_norm_.bias, channels, length,
+                                   kFinalNormGroups, kGroupNormEps);
   cuda_ops::conv1d_device(final, output_conv_.weight, output_conv_.bias, result, channels,
                           action_dim_, length, length, 1, 1, 0);
   cuda_ops::layout_channel_to_horizon_device(result, predicted_, horizon_, action_dim_);
@@ -377,8 +372,7 @@ bool CudaDiffusionResident::begin(std::span<const float> condition,
 {
   if (condition.size() != condition_dim_ || normalized_sample.size() != values_)
     return false;
-  return cuda_ops::device_copy_h2d(condition_, condition.data(),
-                                   condition_dim_ * sizeof(float)) &&
+  return cuda_ops::device_copy_h2d(condition_, condition.data(), condition_dim_ * sizeof(float)) &&
          cuda_ops::device_copy_h2d(x_, normalized_sample.data(), values_ * sizeof(float));
 }
 

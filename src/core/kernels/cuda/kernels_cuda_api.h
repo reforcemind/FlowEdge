@@ -78,6 +78,12 @@ void conv_transpose1d_device(const float* x, const float* weight, const float* b
                              bool k_major_weights) noexcept;
 void group_norm_device(float* x, const float* weight, const float* bias, std::size_t channels,
                        std::size_t length, std::size_t groups, float epsilon) noexcept;
+// GroupNorm -> Mish -> optional FiLM -> optional residual, in that order.
+// modulation is [scale(C), bias(C)]; residual has C*L elements.
+void group_norm_mish_device(float* x, const float* weight, const float* bias, std::size_t channels,
+                            std::size_t length, std::size_t groups, float epsilon,
+                            const float* modulation = nullptr,
+                            const float* residual = nullptr) noexcept;
 void film_device(float* x, const float* scale, const float* bias, std::size_t channels,
                  std::size_t length) noexcept;
 void diffusion_timestep_device(float timestep, float* out, std::size_t n) noexcept;

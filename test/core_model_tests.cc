@@ -20,6 +20,7 @@
 #include <cstring>
 #include <gtest/gtest.h>
 #include <initializer_list>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -472,6 +473,114 @@ TEST(DiffusionHead, DdimAndDdpmAreDeterministicDistinctAndUnnormalized)
 }
 
 #ifdef FLOWEDGE_CUDA
+TEST(CudaMatmul, ResidentRowsMatchDoubleReferenceWithoutAllocation)
+{
+  ASSERT_TRUE(fe::cuda_ops::device_available());
+  using Buffer = std::unique_ptr<float, decltype(&fe::cuda_ops::device_free)>;
+  const auto allocate = [](std::size_t count) {
+    return Buffer{static_cast<float*>(fe::cuda_ops::device_alloc(count * sizeof(float))),
+                  &fe::cuda_ops::device_free};
+  };
+  for (const std::size_t rows : {1uz, 2uz}) {
+    for (const std::size_t width : {37uz, 127uz, 128uz, 129uz, 260uz, 512uz}) {
+      for (const std::size_t outputs : {17uz, 127uz, 128uz, 129uz, 4096uz}) {
+        const auto input = seq(rows * width, 0.071F, -0.3F);
+        const auto weight = seq(outputs * width, 0.019F, 0.2F);
+        std::vector<float> got(rows * outputs);
+        auto dx = allocate(input.size()), dw = allocate(weight.size()), dy = allocate(got.size());
+        ASSERT_TRUE(dx && dw && dy);
+        ASSERT_TRUE(
+            fe::cuda_ops::device_copy_h2d(dx.get(), input.data(), input.size() * sizeof(float)));
+        ASSERT_TRUE(
+            fe::cuda_ops::device_copy_h2d(dw.get(), weight.data(), weight.size() * sizeof(float)));
+        const auto mallocs = fe::cuda_ops::device_malloc_count();
+        for (int repeat = 0; repeat < 2; ++repeat) {
+          fe::cuda_ops::matmul_f32_device(dx.get(), dw.get(), dy.get(), rows, width, outputs);
+          ASSERT_TRUE(
+              fe::cuda_ops::device_copy_d2h(got.data(), dy.get(), got.size() * sizeof(float)));
+          for (std::size_t r = 0; r < rows; ++r)
+            for (std::size_t o = 0; o < outputs; ++o) {
+              double expected = 0.0;
+              for (std::size_t k = 0; k < width; ++k)
+                expected += static_cast<double>(input[r * width + k]) * weight[o * width + k];
+              ASSERT_NEAR(got[r * outputs + o], expected, 2e-5 + std::fabs(expected) * 2e-5)
+                  << "rows=" << rows << " K=" << width << " outputs=" << outputs;
+            }
+        }
+        EXPECT_EQ(fe::cuda_ops::device_malloc_count(), mallocs);
+      }
+    }
+  }
+}
+
+TEST(CudaNormMish, MatchesIndependentEpiloguesWithoutAllocation)
+{
+  ASSERT_TRUE(fe::cuda_ops::device_available());
+  using Buffer = std::unique_ptr<float, decltype(&fe::cuda_ops::device_free)>;
+  const auto allocate = [](std::size_t count) {
+    return Buffer{static_cast<float*>(fe::cuda_ops::device_alloc(count * sizeof(float))),
+                  &fe::cuda_ops::device_free};
+  };
+  for (std::size_t channels : {16uz, 512uz, 2048uz}) {
+    for (std::size_t length : {4uz, 8uz, 16uz}) {
+      const auto input = seq(channels * length, 0.031F, -0.2F);
+      const auto weight = seq(channels, 0.017F, 0.1F);
+      const auto bias = seq(channels, 0.13F, -0.1F);
+      const auto modulation = seq(2uz * channels, 0.11F, 0.2F);
+      const auto residual = seq(input.size(), 0.021F, 0.7F);
+      std::vector<float> got(input.size()), expected(input.size());
+      auto dx = allocate(input.size()), dw = allocate(channels), db = allocate(channels);
+      auto dm = allocate(modulation.size()), dr = allocate(residual.size());
+      ASSERT_TRUE(dx && dw && db && dm && dr);
+      ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(dw.get(), weight.data(), channels * sizeof(float)));
+      ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(db.get(), bias.data(), channels * sizeof(float)));
+      ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(dm.get(), modulation.data(),
+                                                modulation.size() * sizeof(float)));
+      ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(dr.get(), residual.data(),
+                                                residual.size() * sizeof(float)));
+      const auto mallocs = fe::cuda_ops::device_malloc_count();
+      for (unsigned flags = 0; flags < 4; ++flags) {
+        constexpr std::size_t groups = 8uz;
+        const std::size_t count = channels * length / groups;
+        for (std::size_t group = 0; group < groups; ++group) {
+          double sum = 0.0, square = 0.0;
+          for (std::size_t j = 0; j < count; ++j) {
+            const double value = input[group * count + j];
+            sum += value;
+            square += value * value;
+          }
+          const double mean = sum / static_cast<double>(count);
+          const float inv = static_cast<float>(
+              1.0 /
+              std::sqrt(std::max(0.0, square / static_cast<double>(count) - mean * mean) + 1e-5));
+          for (std::size_t j = 0; j < count; ++j) {
+            const std::size_t index = group * count + j, channel = index / length;
+            float value =
+                (input[index] - static_cast<float>(mean)) * (inv * weight[channel]) + bias[channel];
+            value *= std::tanh(std::max(value, 0.0F) + std::log1p(std::exp(-std::fabs(value))));
+            if (flags & 1u)
+              value = modulation[channel] * value + modulation[channels + channel];
+            if (flags & 2u)
+              value += residual[index];
+            expected[index] = value;
+          }
+        }
+        ASSERT_TRUE(
+            fe::cuda_ops::device_copy_h2d(dx.get(), input.data(), input.size() * sizeof(float)));
+        fe::cuda_ops::group_norm_mish_device(dx.get(), dw.get(), db.get(), channels, length, groups,
+                                             1e-5F, flags & 1u ? dm.get() : nullptr,
+                                             flags & 2u ? dr.get() : nullptr);
+        ASSERT_TRUE(
+            fe::cuda_ops::device_copy_d2h(got.data(), dx.get(), got.size() * sizeof(float)));
+        for (std::size_t i = 0; i < got.size(); ++i)
+          ASSERT_NEAR(got[i], expected[i], 2e-5F)
+              << "C=" << channels << " L=" << length << " flags=" << flags;
+      }
+      EXPECT_EQ(fe::cuda_ops::device_malloc_count(), mallocs);
+    }
+  }
+}
+
 TEST(DiffusionHead, CudaResidentDoesNotMallocAfterLoad)
 {
   ASSERT_TRUE(fe::cuda_ops::device_available());

@@ -12,7 +12,7 @@ from .observation import source_config
 
 
 class TorchDiffusionReference:
-    def __init__(self, directory, condition_dim, device="cpu"):
+    def __init__(self, directory, condition_dim, device="cpu", compile_mode="none"):
         self.device = torch.device(device)
         self.config = source_config(directory, device=str(self.device))
         config = self.config
@@ -38,6 +38,8 @@ class TorchDiffusionReference:
             )
         self.unet.load_state_dict(state, strict=True, assign=True)
         self.unet.to(self.device)
+        if compile_mode != "none":
+            self.unet = torch.compile(self.unet, mode=compile_mode, fullgraph=True)
         self.minimum = self.minimum.to(self.device)
         self.maximum = self.maximum.to(self.device)
         self.scheduler = DDIMScheduler(

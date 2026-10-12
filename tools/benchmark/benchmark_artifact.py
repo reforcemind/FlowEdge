@@ -239,6 +239,11 @@ def render(document: dict[str, Any]) -> str:
     ]
     if comparison.get("scope"):
         rows.append(f"| Scope | {comparison['scope']} |")
+    if "reference_compile" in comparison:
+        rows.append(f"| Reference compile mode | `{comparison['reference_compile']}` |")
+        rows.append(
+            f"| Compiled scope | {comparison.get('compiled_scope', 'unspecified')} |"
+        )
     parity = document.get("parity") or {}
     if isinstance(parity, dict) and "max_abs_error" in parity:
         rows.append(

@@ -190,6 +190,26 @@ __global__ void matmul_f32_row_kernel(const float* in, const float* w, float* ou
   out[o] = acc;
 }
 
+// One warp owns an output: adjacent lanes read adjacent weights in the existing
+// row-major layout. No repacking or additional workspace is needed.
+__global__ void matmul_f32_warp_kernel(const float* in, const float* w, float* out, int in_dim,
+                                       int out_dim)
+{
+  const int lane = threadIdx.x & 31;
+  const int o = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
+  if (o >= out_dim)
+    return;
+  const float* wr = w + static_cast<std::size_t>(o) * in_dim;
+  float acc = 0.0F;
+  for (int k = lane; k < in_dim; k += 32)
+    acc += __ldg(in + k) * __ldg(wr + k);
+#pragma unroll
+  for (int offset = 16; offset > 0; offset >>= 1)
+    acc += __shfl_down_sync(0xffffffffu, acc, offset);
+  if (lane == 0)
+    out[o] = acc;
+}
+
 __global__ void matmul_bf16_kernel(const float* in, const std::uint16_t* w, float* out, int rows,
                                    int in_dim, int out_dim)
 {
@@ -571,8 +591,11 @@ __global__ void conv_transpose1d_kernel(const float* x, const float* weight, con
 
 // One block per group: PushT launches 8 groups with 1024 values each, so a single
 // serial thread per group leaves the SM idle.
+template<bool Mish = false>
 __global__ void group_norm_kernel(float* x, const float* weight, const float* bias, int channels,
-                                  int length, int groups, float epsilon)
+                                  int length, int groups, float epsilon,
+                                  const float* modulation = nullptr,
+                                  const float* residual = nullptr)
 {
   const int group = static_cast<int>(blockIdx.x);
   if (group >= groups)
@@ -615,7 +638,15 @@ __global__ void group_norm_kernel(float* x, const float* weight, const float* bi
     const int channel = first + local;
     const float scale = inv * weight[channel];
     const float shift = bias[channel];
-    block[i] = ((block[i] - mean_f) * scale) + shift;
+    float value = ((block[i] - mean_f) * scale) + shift;
+    if constexpr (Mish) {
+      value *= tanhf(fmaxf(value, 0.0f) + log1pf(expf(-fabsf(value))));
+      if (modulation != nullptr)
+        value = modulation[channel] * value + modulation[channels + channel];
+      if (residual != nullptr)
+        value += residual[first * length + i];
+    }
+    block[i] = value;
   }
 }
 
@@ -1061,6 +1092,11 @@ void matmul_f32_device(const float* in, const float* w, float* out, std::size_t 
   if (rows == 0 || in_dim == 0 || out_dim == 0 || in == nullptr || w == nullptr || out == nullptr)
     return;
   census_hit("gemm", static_cast<int>(rows), static_cast<int>(in_dim), static_cast<int>(out_dim));
+  if (rows == 1 && in_dim >= 128 && out_dim >= 128) {
+    matmul_f32_warp_kernel<<<static_cast<unsigned>((out_dim + 7) / 8), 256>>>(
+        in, w, out, static_cast<int>(in_dim), static_cast<int>(out_dim));
+    return;
+  }
   if (rows == 1) {
     matmul_f32_row_kernel<<<grid(static_cast<int>(out_dim)), 256>>>(
         in, w, out, static_cast<int>(in_dim), static_cast<int>(out_dim));
@@ -1177,12 +1213,15 @@ void group_norm(float* x, const float* weight, const float* bias, std::size_t ch
   if (channels == 0 || length == 0 || groups == 0 || channels % groups != 0 || !ready())
     return;
   if (!upload(g_a, x, channels * length * sizeof(float)) ||
-      !upload(g_b, weight, channels * sizeof(float)) || !upload(g_c, bias, channels * sizeof(float)))
+      !upload(g_b, weight, channels * sizeof(float)) ||
+      !upload(g_c, bias, channels * sizeof(float)))
     return;
-  group_norm_kernel<<<static_cast<unsigned>(groups), 256>>>(
-      static_cast<float*>(g_a.ptr), static_cast<const float*>(g_b.ptr),
-      static_cast<const float*>(g_c.ptr), static_cast<int>(channels), static_cast<int>(length),
-      static_cast<int>(groups), epsilon);
+  group_norm_kernel<><<<static_cast<unsigned>(groups), 256>>>(static_cast<float*>(g_a.ptr),
+                                                              static_cast<const float*>(g_b.ptr),
+                                                              static_cast<const float*>(g_c.ptr),
+                                                              static_cast<int>(channels),
+                                                              static_cast<int>(length),
+                                                              static_cast<int>(groups), epsilon);
   download(x, g_a.ptr, channels * length * sizeof(float));
 }
 
@@ -1356,9 +1395,25 @@ void group_norm_device(float* x, const float* weight, const float* bias, std::si
     return;
   census_hit("group_norm", static_cast<int>(channels), static_cast<int>(length),
              static_cast<int>(groups));
-  group_norm_kernel<<<static_cast<unsigned>(groups), 256>>>(
-      x, weight, bias, static_cast<int>(channels), static_cast<int>(length),
-      static_cast<int>(groups), epsilon);
+  group_norm_kernel<><<<static_cast<unsigned>(groups), 256>>>(x, weight, bias,
+                                                              static_cast<int>(channels),
+                                                              static_cast<int>(length),
+                                                              static_cast<int>(groups), epsilon);
+}
+
+void group_norm_mish_device(float* x, const float* weight, const float* bias, std::size_t channels,
+                            std::size_t length, std::size_t groups, float epsilon,
+                            const float* modulation, const float* residual) noexcept
+{
+  if (channels == 0 || length == 0 || groups == 0 || channels % groups != 0 || x == nullptr ||
+      weight == nullptr || bias == nullptr)
+    return;
+  census_hit("norm_mish", static_cast<int>(channels), static_cast<int>(length),
+             static_cast<int>(groups));
+  group_norm_kernel<true>
+      <<<static_cast<unsigned>(groups), 256>>>(x, weight, bias, static_cast<int>(channels),
+                                               static_cast<int>(length), static_cast<int>(groups),
+                                               epsilon, modulation, residual);
 }
 
 void film_device(float* x, const float* scale, const float* bias, std::size_t channels,

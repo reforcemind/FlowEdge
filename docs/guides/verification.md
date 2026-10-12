@@ -123,4 +123,7 @@ Do not replace the README `threads=1` 851 vs 1409 ms CPU figure from a CUDA mix.
 Do not replace the published GTX 1650 **131 vs 345 ms** CUDA replay from a mix
 or a new GPU. Residual fusion and BF16/FP16 weight traffic use the same gate:
 isolate **and** native 10-step DDIM (or matched policy p50) on a card that can
-`cudaMalloc` the U-Net. A 4 GB GTX 1650 WDDM/WSL host is not that card.
+`cudaMalloc` the U-Net. On a 4 GB GTX 1650 WDDM/WSL host, residency depends on
+available memory and the other loaded components. Require confirmed CUDA
+residency for every run; reject CPU fallback instead of inferring fit from VRAM
+capacity alone.

@@ -1,0 +1,24 @@
+{
+  "tool": "flowedge_cuda_dp_mix",
+  "checkpoint": "models/diffusion_pusht.flowedge.safetensors",
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 214.368, "calls": 40, "estimated_ms": 8.575, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 101.504, "calls": 30, "estimated_ms": 3.045, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 333.760, "calls": 30, "estimated_ms": 10.013, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 193.504, "calls": 30, "estimated_ms": 5.805, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 731.296, "calls": 70, "estimated_ms": 51.191, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 755.040, "calls": 10, "estimated_ms": 7.550, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 110.848, "calls": 10, "estimated_ms": 1.108, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 301.056, "calls": 10, "estimated_ms": 3.011, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 276.288, "calls": 10, "estimated_ms": 2.763, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 139.360, "calls": 10, "estimated_ms": 1.394, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 309.696, "calls": 10, "estimated_ms": 3.097, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 163.584, "calls": 10, "estimated_ms": 1.636, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 10.656, "calls": 80, "estimated_ms": 0.852, "kind": "elementwise"},
+    {"name": "group_norm 512 L16", "p50_us": 10.944, "calls": 50, "estimated_ms": 0.547, "kind": "elementwise"},
+    {"name": "group_norm 1024 L8", "p50_us": 27.936, "calls": 40, "estimated_ms": 1.117, "kind": "elementwise"},
+    {"name": "mish 8192", "p50_us": 90.944, "calls": 170, "estimated_ms": 15.460, "kind": "elementwise"},
+    {"name": "gemm 1x260x4096", "p50_us": 74.496, "calls": 40, "estimated_ms": 2.980, "kind": "gemm"},
+    {"name": "native DDIM x10", "p50_us": 108058.205, "calls": 1, "estimated_ms": 108.058, "kind": "native"}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "tool": "flowedge_cuda_dp_mix",
+  "checkpoint": "models/diffusion_pusht.flowedge.safetensors",
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 213.632, "calls": 40, "estimated_ms": 8.545, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 101.632, "calls": 30, "estimated_ms": 3.049, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 335.008, "calls": 30, "estimated_ms": 10.050, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 194.240, "calls": 30, "estimated_ms": 5.827, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 748.800, "calls": 70, "estimated_ms": 52.416, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 745.600, "calls": 10, "estimated_ms": 7.456, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 110.880, "calls": 10, "estimated_ms": 1.109, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 301.056, "calls": 10, "estimated_ms": 3.011, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 276.832, "calls": 10, "estimated_ms": 2.768, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 139.936, "calls": 10, "estimated_ms": 1.399, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 309.280, "calls": 10, "estimated_ms": 3.093, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 214.528, "calls": 10, "estimated_ms": 2.145, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 92.160, "calls": 80, "estimated_ms": 7.373, "kind": "elementwise"},
+    {"name": "group_norm 512 L16", "p50_us": 90.240, "calls": 50, "estimated_ms": 4.512, "kind": "elementwise"},
+    {"name": "group_norm 1024 L8", "p50_us": 11.328, "calls": 40, "estimated_ms": 0.453, "kind": "elementwise"},
+    {"name": "norm+mish+residual separate", "p50_us": 198.368, "calls": 120, "estimated_ms": 23.804, "kind": "conv"},
+    {"name": "norm+mish+residual fused", "p50_us": 12.416, "calls": 120, "estimated_ms": 1.490, "kind": "conv"},
+    {"name": "mish 8192", "p50_us": 6.304, "calls": 170, "estimated_ms": 1.072, "kind": "elementwise"},
+    {"name": "gemm 1x260x4096", "p50_us": 124.704, "calls": 40, "estimated_ms": 4.988, "kind": "gemm"},
+    {"name": "native DDIM x10", "p50_us": 107065.826, "calls": 1, "estimated_ms": 107.066, "kind": "native"}
+  ]
+}

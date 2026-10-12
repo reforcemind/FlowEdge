@@ -116,6 +116,7 @@ CONSUMER="$CONSUMER_DIR/flowedge_install_consumer"
 if [[ "$PYTHON_OPTION" == ON ]]; then
   export PYTHONPATH="$BUILD_DIR${PYTHONPATH:+:$PYTHONPATH}"
   if "$PYTHON" -c 'import numpy, safetensors' >/dev/null 2>&1; then
+    "$PYTHON" "$ROOT/tools/benchmark/compare_native_diffusion.py" --help
     PYTHONPATH="$ROOT/integrations/lerobot/src:$PYTHONPATH" \
       "$PYTHON" -m unittest discover -s "$ROOT/integrations/lerobot/tests" -v
     (cd "$ROOT" && "$PYTHON" -m flowedge_dev verify head "$BUILD_DIR")

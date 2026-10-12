@@ -1,0 +1,28 @@
+{
+  "tool": "flowedge_diffusion_breakdown",
+  "hardware_concurrency": 12,
+  "checkpoint": "models/diffusion_pusht.flowedge.safetensors",
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 677.300, "calls": 40, "estimated_ms": 27.092, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 333.000, "calls": 30, "estimated_ms": 9.990, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 1612.500, "calls": 30, "estimated_ms": 48.375, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 990.800, "calls": 30, "estimated_ms": 29.724, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 4588.100, "calls": 70, "estimated_ms": 321.167, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 4648.100, "calls": 10, "estimated_ms": 46.481, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 203.700, "calls": 10, "estimated_ms": 2.037, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 483.900, "calls": 10, "estimated_ms": 4.839, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 13915.000, "calls": 10, "estimated_ms": 139.150, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 1387.900, "calls": 10, "estimated_ms": 13.879, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 779.700, "calls": 10, "estimated_ms": 7.797, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 254.000, "calls": 10, "estimated_ms": 2.540, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 7.900, "calls": 80, "estimated_ms": 0.632, "kind": "elementwise"},
+    {"name": "mish 8192", "p50_us": 24.800, "calls": 310, "estimated_ms": 7.688, "kind": "elementwise"},
+    {"name": "gemm 4x10240x2048", "p50_us": 4875.900, "calls": 70, "estimated_ms": 341.313, "kind": "gemm"},
+    {"name": "gemm 4x10240x2048 t=2", "p50_us": 4095.300, "calls": 70, "estimated_ms": 286.671, "kind": "gemm"},
+    {"name": "gemm 4x10240x2048 t=4", "p50_us": 2725.300, "calls": 70, "estimated_ms": 190.771, "kind": "gemm"},
+    {"name": "native DDIM x10 t=0 (pool=0)", "p50_us": 795741.900, "calls": 1, "estimated_ms": 795.742, "kind": "native"},
+    {"name": "native DDIM x10 t=2 (pool=2)", "p50_us": 734759.600, "calls": 1, "estimated_ms": 734.760, "kind": "native"},
+    {"name": "native DDIM x10 t=4 (pool=4)", "p50_us": 607406.300, "calls": 1, "estimated_ms": 607.406, "kind": "native"},
+    {"name": "native DDIM x10 t=6 (pool=6)", "p50_us": 594637.000, "calls": 1, "estimated_ms": 594.637, "kind": "native"}
+  ]
+}
