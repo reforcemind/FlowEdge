@@ -1,90 +1,114 @@
 # Product Direction
 
-FlowEdge helps teams qualify and deploy a *trained* policy behind a robot control
-loop: verify the converted output, measure the deployment budget, and make action
-delivery observable. Core runs supported native heads; Relay provides scheduling
-and delivery contracts. LeRobot (or your stack) trains, encodes observations, and
-owns robot limits and e-stop. Allocation guarantees apply to the tested native
-paths, not to the whole camera/Python/driver pipeline.
+FlowEdge is a fast, memory-efficient inference runtime for trained robot
+policies on edge hardware. It takes the latency-critical action path out of a
+heavy Python framework while LeRobot (or another robotics stack) continues to
+own training, datasets, robot drivers, limits, and emergency stop.
 
-## Aim: qualified policy deployment
+## Aim: a policy accelerator for edge robots
 
-The problem is not a universal inference time. A policy can have correct outputs
-offline and still deliver late or stale actions, exhaust memory, or silently use
-an unintended backend on the deployment machine.
+FlowEdge should be the shortest supported path from a trained LeRobot policy to
+a fast, reproducible edge deployment. It should not try to become another
+general graph runtime. TensorRT, ONNX Runtime, and ExecuTorch already solve that
+broader problem across many models and devices.
 
-Our target user is a LeRobot team with a trained checkpoint and a working robot
-task. The deliverable is a reproducible deployment report and an execution path
-whose limits and failure behavior are explicit:
+The useful specialization is the complete robot-policy path: conversion,
+fixed-shape action-head execution, iterative sampling, action chunks, and a
+same-device comparison against the source policy. Native kernels are one
+backend, not the product by themselves. Vendor runtimes may be used when they
+are faster on the target device.
 
-- **Correct output:** bind checkpoint, encoder, normalization and action schema;
-  verify converted actions against the source implementation before actuation.
-- **Declared resource budget:** report the actual backend, residency, setup
-  memory and measured latency distribution on the chosen host. Reject unsupported
-  configurations instead of turning them into successful benchmark results.
-- **Traceable delivery:** distinguish fresh-chunk generation from consuming a
-  buffered action. Measure observation age, action expiry, underruns and deadline
-  misses. Validate the existing replacement, cancellation and fallback contracts.
-- **Task evidence:** compare success and timing separately on matched tasks.
-  Faster inference that breaks the task is not an improvement.
+The primary measurement is fresh action-chunk latency on the target device:
+p50, p95, and p99, with the backend, precision, model, power mode, and thermal
+state recorded. Also report encoder-to-action latency, resident memory, startup
+time, and hot-path allocations. Buffered delivery is useful, but it is not fresh
+inference and must be reported separately.
 
-These are qualification goals, not a claim that every existing adapter supplies
-every measurement. LeRobot already provides
-[asynchronous inference](https://huggingface.co/docs/lerobot/async); another async
-queue alone is not FlowEdge's differentiator. The value to demonstrate is native
-execution plus explicit, tested deployment contracts and independently useful
-evidence. This is not a safety-certified or hard-real-time controller.
+Output parity and task success are performance guardrails. They prevent a
+faster kernel, reduced-precision path, or conversion from silently changing the
+policy. They are not the product objective.
 
-## Next milestones
+## Build next
 
-1. Ship the measured CUDA improvements, regression tests and matched benchmark
-   tooling. Keep same-checkpoint performance comparisons separate from model changes.
-2. Complete the [SO-101 pilot](https://github.com/reforcemind/FlowEdge/issues/193):
-   ACT and DP in LeRobot, plus the same DP in FlowEdge, on one host and task.
-   Start with offline parity; keep limits, supervised commissioning, suitable
-   first-action fallback and stop behavior in the robot adapter.
-3. Turn that pilot into a deployment qualification workflow: one run configuration,
-   preflight checks and a machine-readable result connecting model identity,
-   memory, timing, action age/misses and task outcomes. Reuse existing Core/Relay
-   mechanisms; do not build a second scheduling stack.
-4. Validate on a second host or external user's setup before generalizing the
-   results. Optimize the measured deployment bottleneck, not an isolated headline.
+1. **Make one edge path easy to install.** Support the current stable LeRobot
+   release, publish the FlowEdge and policy-plugin packages, and provide a
+   pinned Jetson container or wheel. A new user should be able to convert and
+   benchmark a compatible checkpoint without editing the repository.
+2. **Remove the Python/CPU seam on CUDA.** Add an explicit device-tensor API
+   (for example DLPack or a checked CUDA buffer view) so a GPU encoder can pass
+   its condition directly to the native head. Keep condition, noise, sampler
+   state, and intermediate actions resident until the final action copy.
+3. **Reduce the dominant weight traffic.** Add FP16/BF16 storage and execution
+   for the diffusion path, using cuDNN, cuBLASLt, CUTLASS, or TensorRT where it
+   beats the native implementation. Select implementations from measurements on
+   the target device instead of expanding a parallel general-purpose operator
+   library.
+4. **Reduce repeated launch cost.** Capture the fixed-shape denoising schedule
+   in a CUDA Graph after setup, then replay it without per-operator host launch
+   overhead. Measure it independently from precision and operator changes.
+5. **Complete the [SO-101 pilot](https://github.com/reforcemind/FlowEdge/issues/193).**
+   Compare the best working LeRobot/PyTorch path with FlowEdge on the same edge
+   device, checkpoint, observations, power mode, and physical task.
+6. **Add policies from real demand.** Generalize conversion from the SO-101
+   checkpoint first. Add ACT only after that pilot identifies it as the useful
+   comparison; defer broad VLA and new-accelerator work until the deployment
+   path is repeatable.
 
-The first milestone of product usefulness is an external contributor reproducing
-the matched pilot and understanding its limits without editing Core. Select the
-control period, acceptable action age and task-quality criteria before each run.
-Report both native sampling time and observation-to-action time; camera, transport
-and actuation costs must be named when they are excluded.
+The first product milestone is a real SO-101 deployment where FlowEdge:
+
+- materially reduces fresh action-chunk latency against the best working
+  PyTorch/LeRobot baseline on the same device;
+- fits the declared memory and power envelope;
+- keeps p95 latency within the task's chosen replanning period; and
+- preserves task success within a predeclared bound.
+
+A useful initial target is at least a 2x policy-latency improvement without a
+task-success regression. This is a target for the selected checkpoint and edge
+device, not a universal claim.
+
+## Refactor for adoption
+
+- Separate **Core** (model package, execution, backends, tensor API) from the
+  optional **Relay** service in the public navigation and release artifacts.
+  Relay should not be required to understand or install the accelerator.
+- Replace compile-time backend ambiguity with an explicit requested/resolved
+  backend in the API and reports. A requested accelerator must fail closed
+  instead of silently producing a CPU performance result.
+- Define one versioned policy-package manifest containing architecture, shapes,
+  normalization, precision, source identity, and supported backends. Keep raw
+  tensor names behind the converter/runtime boundary.
+- Turn the current benchmark scripts into one `flowedge bench` command that can
+  run native, PyTorch eager/compiled, and an available vendor backend on the
+  same inputs, then emit one small machine-readable report.
+- Keep the public compatibility matrix small and current: policy, LeRobot
+  version, device, precision, package, and measured status. Remove stale
+  examples and archived experiment logs from the main user path.
 
 ## What we are dropping
 
-The universal **10 ms fresh-policy-inference goal** is retired. The GTX 1650
-experiments did not achieve it for the unchanged ten-step PushT policy; that is
-not proof that 10 ms is impossible for every policy or machine. Historical
-artifacts retain their original targets and failed gates, but new native A/B
-reports impose no fixed latency target.
+The universal **10 ms fresh-policy-inference goal** is retired. The unchanged
+ten-step FP32 PushT policy did not reach it on the GTX 1650, and its roughly 1 GB
+of weights makes that target bandwidth-limited in the current implementation.
+That result does not make performance secondary and does not say 10 ms is
+impossible for a smaller policy, reduced precision, or different accelerator.
 
-Training and student-policy experiments are outside this runtime roadmap.
-There is no change to the production checkpoint, README performance headline,
-or robot-support claims. A fast control tick consuming buffered actions must
-never be advertised as equally fast fresh inference.
+Training and student-policy work remain outside Core. FlowEdge should first win
+through runtime and edge-deployment engineering on an existing checkpoint;
+compression or distillation can later be a separate, explicit integration.
 
-## Existing scope
+FlowEdge is not a trainer, robot driver, safety controller, or universal model
+compiler.
 
-```{image} _static/figures/purpose.svg
-:alt: Hardware, FlowEdge, LeRobot
-:class: fe-fig
-```
+## Scope
 
-| Keep | Leave |
+| FlowEdge owns | The robotics stack owns |
 |---|---|
-| Hardware: CPU now; Jetson/ARM via plugin; CUDA Mamba, flow, and DP heads; matched GPU replay ([#163](https://github.com/reforcemind/FlowEdge/issues/163)) and CUDA Core period loop ([#164](https://github.com/reforcemind/FlowEdge/issues/164)) on GTX 1650 | Robot e-stop and joint limits |
-| FlowEdge: flow matching, DP U-Net, Transformer decoder fixture, optional Relay | Training, datasets, graph compilers |
-| LeRobot: plugin, encoders, drivers | Native kernels and the arena |
+| Policy conversion and package contract | Training and datasets |
+| Fast action-head execution and device residency | Robot drivers, limits, and emergency stop |
+| Edge backend selection and performance reports | Task definition and safe commissioning |
+| Optional action scheduling through Relay | General model serving and distributed training |
 
-The sequence is convert → matched CPU replay vs PyTorch → Transformer fixture (#10) → CUDA device-resident flow ([#161](https://github.com/reforcemind/FlowEdge/issues/161)) and DP ([#162](https://github.com/reforcemind/FlowEdge/issues/162)) → matched GPU replay ([#163](https://github.com/reforcemind/FlowEdge/issues/163)) → CUDA DP conv occupancy ([#174](https://github.com/reforcemind/FlowEdge/issues/174), [#176](https://github.com/reforcemind/FlowEdge/issues/176), [#179](https://github.com/reforcemind/FlowEdge/issues/179)) → a period loop on Jetson or SO-100 with miss counts. Tenstorrent stays behind that GPU evidence. Success is an external team doing that without FlowEdge training code.
-
-```{image} _static/figures/sequence.svg
-:alt: convert, CPU replay, Jetson or SO-100, same contracts
-:class: fe-fig
-```
+The development sequence is: converted checkpoint -> same-device framework and
+FlowEdge baseline -> device-resident profiling -> precision and operator work ->
+SO-101 task run -> second edge device. Every speedup names the exact checkpoint,
+device, precision, backend, and measured boundary.

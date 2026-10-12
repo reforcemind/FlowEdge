@@ -1,58 +1,74 @@
 # Roadmap
 
-```{image} _static/figures/sequence.svg
-:alt: convert, CPU replay, Jetson or SO-100, same contracts
-:class: fe-fig
-```
+FlowEdge is building a fast policy-inference path for edge robots, beginning
+with LeRobot Diffusion Policy on NVIDIA hardware. The roadmap is deliberately
+narrow: make one useful path easy, fast, and reproducible before adding model
+families or accelerators.
 
-## Current stack
+See [product direction](product-direction) for the product boundary and success
+criteria.
 
-| Layer | Complete |
-|---|---|
-| Core | Mamba, flow head, CPU Transformer decoder baseline, CPU kernels, BF16 weights, C/C++/Python APIs, cached-VLM SmolVLA action-expert boundary |
-| State | Resumable flow solving, Mamba snapshots, generic job capsules |
-| Relay service | Action and generic-job daemons, EDF, cancellation, administration |
-| Action delivery | Multi-rate chunks, timed replacement, freshness and safety gate |
-| Generic jobs | Contracts, IPC, bounded routing/admission, production Mamba streaming |
-| Observability | Portable action/job traces; fixed-memory action/job metrics |
+## Available now
 
-## Active development sequence
+- Native C++ Core with fixed-memory CPU and CUDA execution.
+- Flow matching, Mamba, and LeRobot ConditionalUnet1D Diffusion Policy heads.
+- C, C++, and Python APIs plus an out-of-tree LeRobot policy plugin.
+- Converted `.safetensors` packages and matched PyTorch/FlowEdge benchmarks.
+- Optional Relay scheduling and action delivery; it is not required by Core.
 
-FlowEdge keeps Diffusion Policy and flow matching as the product path. The
-Transformer decoder is a fixture for later VLA work. CUDA is the next accelerator,
-not Tenstorrent-first. Jetson/ARM (#70) still needs a board JSON.
+The current CUDA measurements are desktop GTX 1650 results. They are not Jetson
+or physical-robot results.
 
-| Order | Deliverable | Acceptance evidence |
-|---:|---|---|
-| 1 | Transformer issue #10 | Kernel gtests, tiny-gpt2 conversion JSON, optional latency JSON |
-| 2 | CUDA linking TU | `FLOWEDGE_BACKEND=cuda` configures only with `nvcc`; ISA kernels link ([#160](https://github.com/reforcemind/FlowEdge/issues/160)) |
-| 3 | Device-resident flow head | Persistent device buffers; no per-op host round-trip ([#161](https://github.com/reforcemind/FlowEdge/issues/161)) |
-| 4 | Diffusion Policy on CUDA | Device-resident DDIM; no `cudaMalloc` after load; vs CPU same checkpoint ([#162](https://github.com/reforcemind/FlowEdge/issues/162)) |
-| 5 | Matched GPU replay | GTX 1650 JSON vs PyTorch CUDA ([#163](https://github.com/reforcemind/FlowEdge/issues/163)); LeRobot CUDA period log ([#164](https://github.com/reforcemind/FlowEdge/issues/164)) |
-| 5b | Device-resident Mamba | Persistent device weights/scratch; no `cudaMalloc` after load ([#172](https://github.com/reforcemind/FlowEdge/issues/172)) |
-| 5c | CUDA DP conv occupancy | PushT-shape `flowedge_cuda_dp_mix` before/after; native DDIM median ([#174](https://github.com/reforcemind/FlowEdge/issues/174)) |
-| 5d | CUDA DP split-K conv | L=4 warp split-K; `conv 2048` and native DDIM medians ([#176](https://github.com/reforcemind/FlowEdge/issues/176)) |
-| 5e | CUDA DDIM launch census | One native sample shape counts from `flowedge_cuda_dp_mix`; block-per-group GroupNorm ([#179](https://github.com/reforcemind/FlowEdge/issues/179)) |
-| 5f | CUDA L=8 split-K | L=8 conv and k-major upsample split-K; 256-thread L=4; mix isolate and native DDIM ([#182](https://github.com/reforcemind/FlowEdge/issues/182)) |
-| 6 | Jetson / ARM replay | Device JSON for [#70](https://github.com/reforcemind/FlowEdge/issues/70); x86 JSON is not ARM evidence |
-| 7 | Tenstorrent / π0 / ACT | After CUDA evidence; see deferred table |
+## P0: usable edge package
 
-The first DeadlineFlow selector and CPU DDIM bridge are experimental. Full SmolVLA
-and Tenstorrent execution remain unimplemented. See
-[policy evaluation](guides/policy-evaluation), [DeadlineFlow](guides/deadline-flow),
-[CUDA](architecture/cuda), and the [Tenstorrent program](tenstorrent-program).
+Before adding another head:
 
-## Deferred expansion
+1. Update the plugin to the current stable LeRobot public API.
+2. Publish installable packages and a pinned Jetson build/container.
+3. Convert a non-PushT SO-101 Diffusion Policy checkpoint without source edits.
+4. Make requested and resolved backend/precision explicit; fail closed when the
+   requested accelerator is unavailable.
+5. Provide one command that converts, benchmarks, and writes a compact report.
 
-These tracks require a concrete deployment need before taking priority over CUDA
-flow and Diffusion Policy.
+Done means an external user can install FlowEdge, convert their compatible
+checkpoint, and reproduce a same-device comparison without editing Core.
 
-| Track | Planned |
-|---|---|
-| Heads | ACT, VQ-BeT, π0; Diffusion Policy `diffusion_pusht` is done on CPU |
-| Backbone | Transformer policy adapter and source SmolVLA encoder |
-| Weight traffic | NUMA replication experiments, INT8 |
-| Backends | Tenstorrent TT-Metal |
-| Perception | External observation-encoder integration |
-| Additional backbones | Mamba-3 after CUDA policy evidence |
-| Transport | ROS 2, Zenoh, and distributed scheduling after deployment evidence |
+## P1: remove edge-path overhead
+
+1. Add a device-tensor boundary between the LeRobot encoder and FlowEdge.
+2. Keep condition, noise, sampler state, and intermediate actions on the GPU.
+3. Capture the fixed denoising schedule in a reusable CUDA Graph.
+4. Report transfer, synchronization, operator, and full action-chunk time
+   separately so optimization follows the real bottleneck.
+
+## P2: reduce memory traffic
+
+1. Add FP16/BF16 diffusion weights and activations on supported GPUs.
+2. Benchmark native kernels against cuDNN/cuBLASLt, CUTLASS, and TensorRT for
+   the actual policy shapes; keep the fastest maintainable implementation.
+3. Measure resident device memory, power mode, temperature/throttling, and
+   p50/p95/p99 on a Jetson-class target.
+
+The performance gate is same checkpoint, same device, same inputs, and preserved
+task quality. A useful initial target is at least 2x lower policy latency than
+the best working PyTorch/LeRobot baseline on that device.
+
+## P3: physical SO-101 result
+
+Complete [issue #193](https://github.com/reforcemind/FlowEdge/issues/193) with
+matched LeRobot and FlowEdge runs. Choose the replanning period from the task,
+then report fresh chunk latency, missed periods, memory, and task success.
+
+After the Diffusion Policy pilot:
+
+- add ACT if the same SO-101 users need it ([#194](https://github.com/reforcemind/FlowEdge/issues/194));
+- repeat on a second edge device before generalizing performance claims;
+- consider aarch64/Qualcomm only with a concrete device and backend owner
+  ([#195](https://github.com/reforcemind/FlowEdge/issues/195)).
+
+## Deferred
+
+Full VLA execution, pi0, Tenstorrent, generic graph compilation, ROS 2 transport,
+and additional Relay services do not outrank the installable Jetson/SO-101 path.
+They should enter the active roadmap only with a target checkpoint, device,
+maintainer, and measured baseline.

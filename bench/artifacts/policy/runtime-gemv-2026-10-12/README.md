@@ -83,7 +83,7 @@ README headline nor robot/Jetson claims are changed.
 - Windows local verification passed: 82/82 CTest checks, 108 integration tests
   with one optional-dependency skip, conversion/diffusion, external-head,
   delivery, Mamba/flow ULP (maximum 3 ULP), and tiny-GPT-2 reference checks.
-  See `verify-windows.log`. `git diff --check` also passed.
+  `git diff --check` also passed.
 
 ### Selected PR gate (2026-10-12)
 
@@ -92,14 +92,16 @@ The student-policy tools and their six tests were removed when the universal
 passed again: 82 CTest checks and 102 integration tests with the same optional
 skip, plus delivery/head/diffusion/ULP/Transformer verification. CUDA CTest
 passed 89/89 again. The eight benchmark-artifact tests, changed Python Ruff
-checks and formatting checks, and `git diff --check` passed. See
-`verify-selected-pr.log` for the selected Windows gate. No kernel behavior
-changed after the measured confirmation and matched replay above.
+checks and formatting checks, and `git diff --check` passed. No kernel behavior
+changed after the measured confirmation and matched replay above. Verbose local
+verification logs are intentionally not stored as benchmark artifacts.
 
 The new A/B runner has no hard-coded latency target; archived JSON retains its
 original target fields. The product goal is now
-[qualified deployment](../../../../docs/product-direction.md), not a universal
-10 ms sampler. Full-file clang-format checking of `kernels_cuda.cu` still reports
+[faster, memory-efficient edge inference](../../../../docs/product-direction.md),
+not a universal 10 ms sampler. Output parity is an acceptance guardrail for
+performance work, not the project's focus. Full-file clang-format checking of
+`kernels_cuda.cu` still reports
 pre-existing formatting debt (also present at the branch base); it is not a
 claimed passing check. Other changed C++ files passed the focused format check.
 

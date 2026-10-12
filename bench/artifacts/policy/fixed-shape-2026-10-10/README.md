@@ -98,8 +98,11 @@ Retain the measured runtime improvement and stop treating 10 ms as a universal
 product goal. The compute/traffic estimates above explain the limit of this
 experiment; they do not establish that every model or accelerator has that limit.
 The follow-up training investigation is not part of the runtime PR. FlowEdge's
-next milestone is qualified deployment of an existing trained policy: matched
-outputs, explicit resource budgets and traceable action delivery on a real task.
+next milestone is faster, memory-efficient policy inference on real edge
+hardware: establish the best working PyTorch/LeRobot baseline, remove the
+Python/CPU seam, add reduced-precision and optimized operator paths, and measure
+the result on an SO-101 task. Output parity and task quality remain acceptance
+guardrails, not the product objective.
 See [product direction](../../../../docs/product-direction.md).
 
 Historical JSON keeps the original 10 ms target and failed gate for auditability.
