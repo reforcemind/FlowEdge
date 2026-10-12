@@ -107,15 +107,50 @@ class CliTests(unittest.TestCase):
             "flowedge_lerobot.cli.FlowEdgeDiffusionPolicy.from_checkpoint"
         ) as load:
             load.return_value = FakePolicy()
-            with patch("builtins.print") as print_result:
-                self.assertEqual(
-                    main(["policy.safetensors", "--steps", "1", "--host-facts"]), 0
-                )
+            with patch(
+                "flowedge_lerobot.cli._jetson_facts",
+                return_value={"detected": True, "model": "Jetson AGX Orin"},
+            ):
+                with patch("builtins.print") as print_result:
+                    self.assertEqual(
+                        main(
+                            ["policy.safetensors", "--steps", "1", "--host-facts"]
+                        ),
+                        0,
+                    )
         payload = json.loads(print_result.call_args.args[0])
         self.assertEqual(payload["evaluation_kind"], "edge_dp_rollout")
         self.assertTrue(payload["checkpoint"])
         self.assertIn("processor", payload)
         self.assertIn("python", payload)
+        self.assertEqual(payload["jetson"]["model"], "Jetson AGX Orin")
+
+    def test_cuda_host_facts_do_not_mislabel_non_jetson_run(self):
+        with patch.dict(sys.modules, {"flowedge": SimpleNamespace(cuda=True)}):
+            with patch(
+                "flowedge_lerobot.cli.FlowEdgeDiffusionPolicy.from_checkpoint",
+                return_value=FakePolicy(),
+            ):
+                with patch(
+                    "flowedge_lerobot.cli._jetson_facts",
+                    return_value={"detected": False},
+                ):
+                    with patch("builtins.print") as print_result:
+                        self.assertEqual(
+                            main(
+                                [
+                                    "policy.safetensors",
+                                    "--device",
+                                    "cuda",
+                                    "--steps",
+                                    "1",
+                                    "--host-facts",
+                                ]
+                            ),
+                            0,
+                        )
+        payload = json.loads(print_result.call_args.args[0])
+        self.assertIn("No physical Jetson", payload["limitations"][-1])
 
 
 if __name__ == "__main__":

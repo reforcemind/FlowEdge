@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.policies import PreTrainedPolicy
 
 from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, LeRobotSmolVLACacheProvider
 
@@ -19,11 +19,17 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
         cache_provider = kwargs.pop("cache_provider", None)
         super().__init__(config, *args, **kwargs)
         config.validate_features()
+        from flowedge_lerobot.device import config_device
+
+        device = config_device(config)
         action_dim = int(config.action_feature.shape[0])
         if expert is None:
             import flowedge
+            from flowedge_lerobot.device import require_native_device
 
+            require_native_device(device, flowedge)
             engine = flowedge.Engine(config.checkpoint_path)
+            require_native_device(device, flowedge, engine=engine)
             expert = FlowEdgeSmolVLACachedExpert(
                 engine,
                 action_dim=action_dim,
@@ -38,6 +44,7 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
             from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
             source = SmolVLAPolicy.from_pretrained(config.source_checkpoint_path)
+            source.to(device)
             cache_provider = LeRobotSmolVLACacheProvider(
                 source, expert_layers=expert.contract.expert_layers
             )

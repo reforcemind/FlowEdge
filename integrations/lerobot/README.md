@@ -1,12 +1,11 @@
 # FlowEdge + LeRobot
 
-![Hardware, FlowEdge, LeRobot](../../docs/_static/figures/purpose.svg)
-
-Out-of-tree `lerobot_policy_flowedge` plugin. Training, cameras, limits, and e-stop stay in LeRobot. FlowEdge runs the converted action path.
+Out-of-tree `lerobot_policy_flowedge` plugin for LeRobot 0.6. Training, cameras,
+limits, and e-stop stay in LeRobot. FlowEdge runs the converted action path.
 
 ## Scope
 
-- Converted `lerobot/diffusion_pusht` (`--policy.type=flowedge`)
+- Compatible LeRobot `DiffusionConditionalUnet1d` checkpoints (`--policy.type=flowedge`)
 - Visual observations via the source RGB encoder, or a flattened condition
 - `--on-miss hold|drop|raise` on a control period
 - Cached SmolVLA expert (`--policy.type=flowedge_smolvla`): LeRobot VLM cache, native Euler expert — not a native VLM
@@ -16,9 +15,13 @@ Action slice: `actions[observation_steps - 1 : observation_steps - 1 + action_st
 ## Install
 
 ```bash
-python -m pip install -e integrations/lerobot
+python -m pip install -e "integrations/lerobot[dp]"
 python -m unittest discover -s integrations/lerobot/tests
 ```
+
+The plugin requires Python 3.12+ and `lerobot>=0.6.1,<0.7`. An explicit CUDA
+request never falls back to CPU: both the PyTorch encoder and native FlowEdge
+engine must be CUDA-capable.
 
 ## Hardware and sim
 
@@ -39,7 +42,17 @@ python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetens
 The RGB encoder stays in LeRobot when `input_mode=visual`. GTX 1650 10 ms hold
 missed 20 / 20. Not Jetson/ARM.
 
-Jetson / ARM: `scripts/edge_dp_rollout.sh <converted.safetensors>` and attach JSON to issue #70.
+Physical Jetson CUDA smoke:
+
+```bash
+FLOWEDGE_EDGE_REPORT=jetson.json \
+  scripts/edge_dp_rollout.sh <converted.safetensors>
+```
+
+The helper requires Linux aarch64, `/etc/nv_tegra_release`, Python 3.12+, a
+CUDA build of FlowEdge, and device-resident weights. Its JSON identifies the
+Jetson model and L4T release. It is a synthetic inference result, not evidence
+of robot task success.
 
 SO-100/SO-101: wrap `reset` / `observe` / `send_action` / `stop` and pass `encode_condition` into `run_rollout`. The plugin does not import a robot driver.
 

@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lerobot_policy_flowedge"
-version = "0.1.2"
+version = "0.2.0"
 description = "LeRobot out-of-tree deployment plugin for FlowEdge Diffusion Policy and SmolVLA"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
   "flowedge>=0.1.0",
-  "lerobot>=0.4.4,<0.5",
+  "lerobot>=0.6.1,<0.7",
   "numpy>=1.20",
 ]
 
@@ -22,8 +22,8 @@ flowedge-lerobot-evaluate = "flowedge_lerobot.evaluate:main"
 
 [project.optional-dependencies]
 evaluation = ["gym-pusht==0.1.5", "pymunk>=6.6,<7"]
-dp = ["lerobot>=0.4.4,<0.5"]
-smolvla = ["lerobot[smolvla]>=0.4.4,<0.5"]
+dp = ["lerobot[diffusion]>=0.6.1,<0.7"]
+smolvla = ["lerobot[smolvla]>=0.6.1,<0.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
