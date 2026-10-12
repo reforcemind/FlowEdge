@@ -1,3 +1,4 @@
+import importlib.util
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -35,6 +36,9 @@ class NativeDeviceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cpu or cuda"):
             require_native_device("metal", SimpleNamespace(cuda=True))
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("lerobot"), "requires the optional LeRobot runtime"
+    )
     def test_plugin_config_does_not_silently_replace_cuda_with_cpu(self):
         import torch
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
@@ -49,6 +53,9 @@ class NativeDeviceTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "selected 'cpu'"):
                     FlowEdgeConfig(device="cuda")
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("lerobot"), "requires the optional LeRobot runtime"
+    )
     def test_plugin_config_defaults_to_cpu(self):
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
 
