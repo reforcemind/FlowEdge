@@ -42,3 +42,23 @@ def make_flowedge_pre_post_processors(config, dataset_stats=None):
             to_output=transition_to_policy_action,
         ),
     )
+
+
+def make_flowedge_smolvla_pre_post_processors(config, dataset_stats=None):
+    """Use the paired source SmolVLA preprocessing contract for the hybrid."""
+
+    from lerobot.configs import PreTrainedConfig
+    from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
+    from lerobot.policies.smolvla.processor_smolvla import (
+        make_smolvla_pre_post_processors,
+    )
+
+    source = PreTrainedConfig.from_pretrained(config.source_checkpoint_path)
+    if not isinstance(source, SmolVLAConfig):
+        raise ValueError("source_checkpoint_path must contain a SmolVLA policy")
+    source.device = config_device(config)
+    if config.input_features:
+        source.input_features = config.input_features
+    if config.output_features:
+        source.output_features = config.output_features
+    return make_smolvla_pre_post_processors(source, dataset_stats)

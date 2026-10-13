@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.policies import PreTrainedPolicy
 from lerobot.utils.constants import OBS_STATE
 
 from flowedge_lerobot import FlowEdgeDiffusionPolicy
@@ -18,11 +18,9 @@ class FlowEdgePolicy(PreTrainedPolicy):
     def __init__(self, config: FlowEdgeConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
         config.validate_features()
-        device = "cpu"
-        if config.input_mode == "visual":
-            from flowedge_lerobot.device import config_device
+        from flowedge_lerobot.device import config_device
 
-            device = config_device(config)
+        device = config_device(config)
         self._policy = FlowEdgeDiffusionPolicy.from_checkpoint(
             config.checkpoint_path, device=device
         )
@@ -36,13 +34,12 @@ class FlowEdgePolicy(PreTrainedPolicy):
             raise ValueError("action feature disagrees with converted checkpoint")
         self._encoder = None
         if config.input_mode == "visual":
-            from flowedge_lerobot.device import config_device, require_native_device
+            from flowedge_lerobot.device import require_native_device
             from flowedge_lerobot.observation import (
                 DiffusionObservationEncoder,
                 validate_source_pair,
             )
 
-            device = config_device(config)
             if str(device).startswith("cuda"):
                 import flowedge
 
@@ -161,3 +158,9 @@ class FlowEdgePolicy(PreTrainedPolicy):
         self._condition_value = (
             state.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1)
         )
+
+
+# LeRobot resolves third-party classes from the configuration module's sibling
+# modeling module. Both FlowEdge configs live in configuration_flowedge.py, so
+# expose the SmolVLA policy here as well as in its implementation module.
+from .modeling_flowedge_smolvla import FlowEdgeSmolVLAPolicy  # noqa: E402,F401

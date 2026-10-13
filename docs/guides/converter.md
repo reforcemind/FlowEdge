@@ -68,8 +68,9 @@ If the source normalizes actions with dataset stats, carry those stats through a
 
 ## LeRobot Diffusion Policy
 
-Download `lerobot/diffusion_pusht`, then pass its directory so the converter can
-read both `model.safetensors` and `config.json`:
+Pass a LeRobot 0.6 Diffusion Policy directory so the converter can read
+`model.safetensors`, `config.json`, and modern processor sidecars. The public
+PushT checkpoint is the pinned parity fixture, not a hard-coded shape:
 
 ```bash
 hf download lerobot/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 \
@@ -80,7 +81,9 @@ python -m flowedge_dev pipeline convert models/diffusion_pusht \
 
 This maps `ConditionalUnet1D`, shortens tensor names for the fixed loader,
 stores horizon/dimension/scheduler metadata, and preserves action min/max. It
-drops the RGB encoder by design. Unsupported schedules, prediction modes,
-normalization, or U-Net variants fail with a specific conversion error.
+drops the RGB encoder by design. Action dimension, horizon, observation steps,
+action steps, and U-Net widths come from the checkpoint. Unsupported schedules,
+prediction modes, normalization, geometry, or U-Net variants fail with a
+specific conversion error.
 
 Source: `convert/convert.py`. See [ADR 0006](../decisions/0006-obs-encoder-out-of-scope).

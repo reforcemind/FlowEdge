@@ -199,6 +199,28 @@ def _cuda_device_name() -> str | None:
     return output.splitlines()[0].strip() or None
 
 
+def _jetson_facts() -> dict[str, object]:
+    """Return evidence that distinguishes a Jetson run from generic ARM64 CI."""
+
+    release_path = Path("/etc/nv_tegra_release")
+    model_path = Path("/proc/device-tree/model")
+    detected = (
+        platform.system() == "Linux"
+        and platform.machine().lower() in {"aarch64", "arm64"}
+        and release_path.exists()
+    )
+    facts: dict[str, object] = {"detected": detected}
+    if release_path.exists():
+        facts["tegra_release"] = release_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).strip()
+    if model_path.exists():
+        facts["model"] = model_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).rstrip("\x00\n")
+    return facts
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -241,15 +263,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         peak_rss_bytes=peak_rss_bytes(),
         device=args.device,
     )
+    jetson = _jetson_facts() if args.host_facts else None
     if args.device == "cuda":
         cuda_device = _cuda_device_name()
         if cuda_device:
             report["cuda_device"] = cuda_device
-        report["limitations"] = [
+        limitations = [
             "Synthetic encoded-condition smoke; RGB encoder stays in LeRobot for input_mode=visual.",
             "missed_deadlines counts per-call overruns against --period-ms, not closed-loop task success.",
-            "Not Jetson/ARM. Not TensorRT/ONNX.",
+            "Native CUDA Core only; not TensorRT/ONNX.",
         ]
+        limitations.append(
+            "Physical Jetson host detected; this is not a robot task-success result."
+            if jetson and jetson["detected"]
+            else "No physical Jetson host was detected."
+        )
+        report["limitations"] = limitations
     if args.host_facts:
         report.update(
             evaluation_kind="edge_dp_rollout",
@@ -258,6 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             period_ms=args.period_ms,
             processor=_cpu_summary(),
             python=platform.python_version(),
+            jetson=jetson,
         )
     encoded = json.dumps(report, sort_keys=True)
     print(encoded)

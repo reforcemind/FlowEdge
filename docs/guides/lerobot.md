@@ -1,16 +1,6 @@
 # LeRobot deployment adapter
 
-LeRobot trains the policy, runs cameras, and talks to the robot. FlowEdge is the native action head behind that plugin: converted `diffusion_pusht` first, then a cached SmolVLA expert. The problem this solves is the last milliseconds — a fixed U-Net, a period, and an explicit miss policy — without putting e-stop or joint limits inside Core.
-
-```{image} ../_static/figures/purpose.svg
-:alt: Hardware, FlowEdge, LeRobot
-:class: fe-fig
-```
-
-```{image} ../_static/figures/deadline.svg
-:alt: 10 ms period vs sample latency, on-miss hold
-:class: fe-fig
-```
+LeRobot trains the policy, runs cameras, and talks to the robot. FlowEdge is the native action head behind that plugin: a compatible Diffusion Policy U-Net or cached SmolVLA expert. It provides fixed-memory execution, an explicit period, and a miss policy without putting e-stop or joint limits inside Core.
 
 ## Boundary
 
@@ -26,9 +16,12 @@ Action slice: `actions[observation_steps - 1 : observation_steps - 1 + action_st
 ## Install
 
 ```bash
-python -m pip install -e integrations/lerobot
+python -m pip install -e "integrations/lerobot[dp]"
 python -m unittest discover -s integrations/lerobot/tests
 ```
+
+The adapter supports Python 3.12+, LeRobot 0.6, and only `cpu` or `cuda`.
+Unavailable CUDA is an error; it is never silently replaced with CPU.
 
 ```python
 from flowedge_lerobot import FlowEdgeDiffusionPolicy
@@ -62,6 +55,17 @@ not a CUDA replay. `FLOWEDGE_CUDA_REQUIRED=1` fails closed. GTX 1650, 10 ms hold
 | `drop` | Skip `send_action` |
 | `raise` | `DeadlineMissed` after `stop` |
 
-Jetson: `scripts/edge_dp_rollout.sh`. Attach JSON to issue #70. SO-100: implement `reset` / `observe` / `send_action` / `stop` and pass `encode_condition` into `run_rollout`. CI uses a fake robot. ARM64 CI is architecture validation, not a board claim.
+On a physical Jetson, run:
+
+```bash
+FLOWEDGE_EDGE_REPORT=jetson.json \
+  scripts/edge_dp_rollout.sh models/diffusion.flowedge.safetensors
+```
+
+The helper requires Linux aarch64, the L4T release file, Python 3.12+, and
+device-resident native CUDA weights. The resulting JSON is a synthetic
+inference benchmark. SO-101 task success still requires a robot adapter with
+`reset` / `observe` / `send_action` / `stop` and an `encode_condition`
+callback. CI uses a fake robot; ARM64 CI alone is not a board claim.
 
 `--policy.type=flowedge` is DP. `--policy.type=flowedge_smolvla` is the native expert plus a LeRobot VLM cache — not a native VLM. Tenstorrent is a separate backend, not this plugin.

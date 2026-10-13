@@ -10,9 +10,23 @@ import numpy as np
     "requires the full optional LeRobot runtime",
 )
 class PluginTests(unittest.TestCase):
-    def make_policy(self, seed=7):
-        from lerobot.configs.types import FeatureType, PolicyFeature
+    def make_config(self, seed=7, device="cpu"):
+        from lerobot.configs import FeatureType, PolicyFeature
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
+
+        return FlowEdgeConfig(
+            checkpoint_path="fixture",
+            seed=seed,
+            device=device,
+            input_features={
+                "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(3,))
+            },
+            output_features={
+                "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,))
+            },
+        )
+
+    def make_policy(self, seed=7):
         from lerobot_policy_flowedge.modeling_flowedge import FlowEdgePolicy
         from flowedge_lerobot import FlowEdgeDiffusionPolicy
 
@@ -35,17 +49,7 @@ class PluginTests(unittest.TestCase):
                 )
 
         engine = Engine()
-        config = FlowEdgeConfig(
-            checkpoint_path="fixture",
-            seed=seed,
-            device="cpu",
-            input_features={
-                "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(3,))
-            },
-            output_features={
-                "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,))
-            },
-        )
+        config = self.make_config(seed=seed)
         with patch(
             "flowedge_lerobot.FlowEdgeDiffusionPolicy.from_checkpoint",
             return_value=FlowEdgeDiffusionPolicy(engine),
@@ -108,16 +112,83 @@ class PluginTests(unittest.TestCase):
             )
 
     def test_plugin_registers_flowedge_policy(self):
-        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.configs import PreTrainedConfig
+        from lerobot.policies.factory import get_policy_class
         from lerobot.utils.import_utils import register_third_party_plugins
 
         register_third_party_plugins()
         self.assertIsNotNone(PreTrainedConfig.get_choice_class("flowedge"))
         self.assertIsNotNone(PreTrainedConfig.get_choice_class("flowedge_smolvla"))
+        self.assertEqual(get_policy_class("flowedge").__name__, "FlowEdgePolicy")
+        self.assertEqual(
+            get_policy_class("flowedge_smolvla").__name__,
+            "FlowEdgeSmolVLAPolicy",
+        )
+
+    def test_encoded_policy_passes_requested_device_to_native_loader(self):
+        from lerobot_policy_flowedge.modeling_flowedge import FlowEdgePolicy
+        from flowedge_lerobot import FlowEdgeDiffusionPolicy
+
+        class Engine:
+            diffusion_metadata = {
+                "condition_dim": 3,
+                "action_dim": 2,
+                "horizon": 4,
+                "action_steps": 3,
+                "observation_steps": 2,
+            }
+
+            def sample_diffusion(self, *args, **kwargs):
+                del args, kwargs
+                return np.zeros((4, 2), dtype=np.float32)
+
+        with patch(
+            "lerobot.configs.policies.is_torch_device_available", return_value=True
+        ):
+            config = self.make_config(device="cuda:7")
+        with patch(
+            "flowedge_lerobot.FlowEdgeDiffusionPolicy.from_checkpoint",
+            return_value=FlowEdgeDiffusionPolicy(Engine()),
+        ) as load:
+            FlowEdgePolicy(config)
+        load.assert_called_once_with("fixture", device="cuda:7")
+
+    def test_smolvla_processor_uses_source_policy_contract(self):
+        from lerobot.configs import FeatureType, PolicyFeature
+        from lerobot.policies.factory import make_pre_post_processors
+        from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
+        from lerobot.utils.import_utils import register_third_party_plugins
+        from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeSmolVLAConfig
+
+        register_third_party_plugins()
+        config = FlowEdgeSmolVLAConfig(
+            checkpoint_path="expert.safetensors",
+            source_checkpoint_path="source",
+            device="cpu",
+            input_features={
+                "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(6,))
+            },
+            output_features={
+                "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,))
+            },
+        )
+        source = SmolVLAConfig(device="cpu")
+        expected = (object(), object())
+        with patch(
+            "lerobot.configs.PreTrainedConfig.from_pretrained",
+            return_value=source,
+        ):
+            with patch(
+                "lerobot.policies.smolvla.processor_smolvla.make_smolvla_pre_post_processors",
+                return_value=expected,
+            ) as make_source:
+                actual = make_pre_post_processors(config, dataset_stats={})
+        self.assertEqual(actual, expected)
+        make_source.assert_called_once_with(source, {})
 
     def test_smolvla_plugin_consumes_cached_chunks(self):
         import torch
-        from lerobot.configs.types import FeatureType, PolicyFeature
+        from lerobot.configs import FeatureType, PolicyFeature
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeSmolVLAConfig
         from lerobot_policy_flowedge.modeling_flowedge_smolvla import FlowEdgeSmolVLAPolicy
         from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, SmolVLAKVCache

@@ -87,7 +87,7 @@ def main() -> int:
     try:
         import pyarrow.parquet as pq
         import torch
-        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.configs import PreTrainedConfig
         from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
         from transformers import AutoProcessor
 

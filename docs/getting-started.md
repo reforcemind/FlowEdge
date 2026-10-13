@@ -79,7 +79,7 @@ python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetens
   --steps 10 --period-ms 10 --on-miss hold
 ```
 
-`--on-miss`: `hold` last sent action, `drop` the send, or `raise`. Limits and e-stop stay in the robot adapter. Jetson: `scripts/edge_dp_rollout.sh`. A 10 ms period on current PushT DDIM is a miss log, not a hit-rate claim ([performance](performance)).
+`--on-miss`: `hold` last sent action, `drop` the send, or `raise`. Limits and e-stop stay in the robot adapter. On a physical Jetson, `scripts/edge_dp_rollout.sh` fails closed unless native CUDA weights are resident and writes host evidence to JSON. A 10 ms period on current PushT DDIM is a miss log, not a hit-rate claim ([performance](performance)).
 
 (use-an-external-encoder)=
 ## Use an external encoder

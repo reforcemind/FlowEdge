@@ -2,8 +2,23 @@
 
 from dataclasses import dataclass
 
-from lerobot.configs.policies import PreTrainedConfig
-from lerobot.optim.optimizers import AdamWConfig
+from lerobot.configs import PreTrainedConfig
+from lerobot.optim import AdamWConfig
+
+
+def _fail_closed_device(config: PreTrainedConfig) -> None:
+    """Keep an explicit edge backend from silently falling back to CPU."""
+
+    requested = str(config.device or "cpu")
+    if requested != "cpu" and not requested.startswith("cuda"):
+        raise ValueError("FlowEdge device must be cpu or cuda")
+    config.device = requested
+    PreTrainedConfig.__post_init__(config)
+    if config.device != requested:
+        raise RuntimeError(
+            f"FlowEdge requested device '{requested}', but LeRobot selected "
+            f"'{config.device}'. Install a matching runtime or request device=cpu."
+        )
 
 
 @PreTrainedConfig.register_subclass("flowedge")
@@ -16,6 +31,9 @@ class FlowEdgeConfig(PreTrainedConfig):
     seed: int = 0
     inference_steps: int = 10
     scheduler: str = "ddim"
+
+    def __post_init__(self) -> None:
+        _fail_closed_device(self)
 
     def get_optimizer_preset(self) -> AdamWConfig:
         raise RuntimeError(
@@ -70,6 +88,9 @@ class FlowEdgeSmolVLAConfig(PreTrainedConfig):
     action_steps: int | None = None
     seed: int = 0
     inference_steps: int = 10
+
+    def __post_init__(self) -> None:
+        _fail_closed_device(self)
 
     def get_optimizer_preset(self) -> AdamWConfig:
         raise RuntimeError(
