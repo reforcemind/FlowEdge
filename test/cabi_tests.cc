@@ -72,6 +72,10 @@ TEST(CAbiContract, NullHandlesReportInvalidArguments)
   EXPECT_EQ(fe_engine_action_dim(nullptr), 0uz);
   EXPECT_EQ(fe_engine_condition_dim(nullptr), 0uz);
   EXPECT_EQ(fe_engine_cuda_resident(nullptr), 0);
+  EXPECT_EQ(fe_engine_diffusion_cuda_device(nullptr), -1);
+  EXPECT_EQ(fe_engine_sample_diffusion_device(nullptr, nullptr, nullptr, 0uz, FE_DIFFUSION_DDIM, 0u,
+                                              0uz, 0uz, nullptr),
+            FE_STATUS_INVALID_ARGUMENT);
   EXPECT_EQ(fe_weights_size_bytes(nullptr), 0uz);
 }
 

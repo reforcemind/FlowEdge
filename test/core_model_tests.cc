@@ -603,6 +603,46 @@ TEST(DiffusionHead, CudaResidentDoesNotMallocAfterLoad)
     EXPECT_TRUE(std::isfinite(value));
 }
 
+TEST(DiffusionHead, CudaTensorPathMatchesHostAndWritesCompactSlice)
+{
+  ASSERT_TRUE(fe::cuda_ops::device_available());
+  DiffusionFixture fixture;
+  fe::DiffusionHead head{fixture.tensors, fixture.arena};
+  ASSERT_TRUE(head.valid());
+  ASSERT_TRUE(head.cuda_resident());
+  const std::vector<float> condition = seq(3uz, 0.31F, -0.2F);
+  const std::vector<float> noise = seq(8uz, 0.29F, 0.1F);
+  std::vector<float> workspace(head.sampler_workspace_size());
+  std::vector<float> expected(8uz);
+  ASSERT_TRUE(
+      head.sample(condition, noise, 5uz, fe::DiffusionHead::kDDIM, 1u, workspace, expected));
+
+  auto* condition_device =
+      static_cast<float*>(fe::cuda_ops::device_alloc(condition.size() * sizeof(float)));
+  auto* noise_device =
+      static_cast<float*>(fe::cuda_ops::device_alloc(noise.size() * sizeof(float)));
+  auto* action_device = static_cast<float*>(fe::cuda_ops::device_alloc(4uz * sizeof(float)));
+  ASSERT_NE(condition_device, nullptr);
+  ASSERT_NE(noise_device, nullptr);
+  ASSERT_NE(action_device, nullptr);
+  ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(condition_device, condition.data(),
+                                            condition.size() * sizeof(float)));
+  ASSERT_TRUE(
+      fe::cuda_ops::device_copy_h2d(noise_device, noise.data(), noise.size() * sizeof(float)));
+  const auto mallocs = fe::cuda_ops::device_malloc_count();
+  ASSERT_TRUE(head.sample_device(condition_device, noise_device, 5uz, fe::DiffusionHead::kDDIM, 1u,
+                                 workspace, action_device, 1uz, 2uz));
+  EXPECT_EQ(fe::cuda_ops::device_malloc_count(), mallocs);
+  std::vector<float> actual(4uz);
+  ASSERT_TRUE(
+      fe::cuda_ops::device_copy_d2h(actual.data(), action_device, actual.size() * sizeof(float)));
+  for (std::size_t index{0uz}; index < actual.size(); ++index)
+    EXPECT_FLOAT_EQ(actual[index], expected[index + 2uz]);
+  fe::cuda_ops::device_free(condition_device);
+  fe::cuda_ops::device_free(noise_device);
+  fe::cuda_ops::device_free(action_device);
+}
+
 TEST(DiffusionHead, CudaAttachFailureKeepsCpuKernels)
 {
   const fe::test::EnvOverride host{"FLOWEDGE_CUDA_FORCE_HOST", "1"};

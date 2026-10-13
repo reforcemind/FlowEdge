@@ -1034,4 +1034,64 @@ bool DiffusionHead::sample(std::span<const float> condition, std::span<const flo
   return true;
 }
 
+#ifdef FLOWEDGE_CUDA
+int DiffusionHead::cuda_device_id() const noexcept
+{
+  return cuda_ != nullptr ? cuda_->device_id() : -1;
+}
+
+bool DiffusionHead::sample_device(const float* condition, const float* initial_noise,
+                                  std::size_t inference_steps, Scheduler scheduler,
+                                  std::uint64_t seed, std::span<float> workspace, float* action,
+                                  std::size_t action_start, std::size_t action_steps) noexcept
+{
+  const std::size_t values = sample_values();
+  if (!ok_ || cuda_ == nullptr || condition == nullptr || initial_noise == nullptr ||
+      action == nullptr || workspace.size() < workspace_floats_ || inference_steps == 0uz ||
+      inference_steps > cfg_.train_timesteps || (scheduler != kDDIM && scheduler != kDDPM) ||
+      action_steps == 0uz || action_start > cfg_.horizon ||
+      action_steps > cfg_.horizon - action_start || !cuda_->begin_device(condition, initial_noise))
+    return false;
+
+  GaussianGenerator gaussian{seed};
+  const std::size_t step_ratio = cfg_.train_timesteps / inference_steps;
+  std::span<float> noise_host = workspace.first(values);
+  for (std::size_t index{0uz}; index < inference_steps; ++index) {
+    const std::size_t reverse_index = inference_steps - 1uz - index;
+    const std::size_t timestep = reverse_index * step_ratio;
+    const std::ptrdiff_t previous =
+        static_cast<std::ptrdiff_t>(timestep) - static_cast<std::ptrdiff_t>(step_ratio);
+    if (!cuda_->denoise_current(static_cast<float>(timestep)))
+      return false;
+    const float alpha_t = alphas_cumprod_[timestep];
+    const float alpha_previous = previous >= 0 ? alphas_cumprod_[previous] : 1.0F;
+    const float beta_t = 1.0F - alpha_t;
+    if (scheduler == kDDIM) {
+      cuda_->ddim_update(std::sqrt(alpha_t), std::sqrt(beta_t), std::sqrt(alpha_previous),
+                         std::sqrt(1.0F - alpha_previous), cfg_.clip_sample,
+                         cfg_.clip_sample_range);
+      continue;
+    }
+    const float current_alpha = alpha_t / alpha_previous;
+    const float current_beta = 1.0F - current_alpha;
+    const float original_coefficient =
+        std::sqrt(alpha_previous) * current_beta / std::max(beta_t, 1e-20F);
+    const float sample_coefficient =
+        std::sqrt(current_alpha) * (1.0F - alpha_previous) / std::max(beta_t, 1e-20F);
+    const float variance = ((1.0F - alpha_previous) / std::max(beta_t, 1e-20F)) * current_beta;
+    const float* noise_ptr = nullptr;
+    if (previous >= 0) {
+      for (std::size_t value{0uz}; value < values; ++value)
+        noise_host[value] = gaussian.next();
+      noise_ptr = noise_host.data();
+    }
+    if (!cuda_->ddpm_update(std::sqrt(alpha_t), std::sqrt(beta_t), original_coefficient,
+                            sample_coefficient, std::sqrt(std::max(variance, 1e-20F)),
+                            cfg_.clip_sample, cfg_.clip_sample_range, noise_ptr))
+      return false;
+  }
+  return cuda_->copy_action_device(action, action_start, action_steps);
+}
+#endif
+
 } // namespace fe

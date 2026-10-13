@@ -23,6 +23,10 @@ The plugin requires Python 3.12+ and `lerobot>=0.6.1,<0.7`. An explicit CUDA
 request never falls back to CPU: both the PyTorch encoder and native FlowEdge
 engine must be CUDA-capable.
 
+On CUDA, the plugin passes the encoded condition, initial noise, and executable action chunk
+through DLPack. These tensors stay on device until LeRobot's postprocessor moves the selected
+action to CPU for the robot driver. CPU mode keeps the NumPy path.
+
 ## Hardware and sim
 
 Fake robot (CI and CPU):

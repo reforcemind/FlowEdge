@@ -262,6 +262,11 @@ int fe_engine_cuda_resident(const fe_engine* engine)
   return engine != nullptr && engine->runtime.cuda_resident() ? 1 : 0;
 }
 
+int fe_engine_diffusion_cuda_device(const fe_engine* engine)
+{
+  return engine != nullptr ? engine->runtime.diffusion_cuda_device() : -1;
+}
+
 int fe_engine_model_metadata(const fe_engine* engine, fe_model_metadata* metadata)
 {
   last_error() = "";
@@ -520,6 +525,27 @@ int fe_engine_sample_diffusion(fe_engine* engine, const float* condition, const 
   }
   return engine->runtime.sample_diffusion(condition, noise, steps, selected, seed, action,
                                           last_error());
+}
+
+int fe_engine_sample_diffusion_device(fe_engine* engine, const float* condition_device,
+                                      const float* noise_device, std::size_t steps, int scheduler,
+                                      std::uint64_t seed, std::size_t action_start,
+                                      std::size_t action_steps, float* action_device)
+{
+  last_error() = "";
+  if (engine == nullptr || condition_device == nullptr || noise_device == nullptr ||
+      action_device == nullptr || steps == 0uz || action_steps == 0uz) {
+    last_error() = "Invalid arguments to fe_engine_sample_diffusion_device";
+    return FE_STATUS_INVALID_ARGUMENT;
+  }
+  fe::DiffusionHead::Scheduler selected{};
+  if (!diffusion_scheduler(scheduler, selected)) {
+    last_error() = "Diffusion scheduler must be FE_DIFFUSION_DDIM or FE_DIFFUSION_DDPM";
+    return FE_STATUS_INVALID_SOLVER;
+  }
+  return engine->runtime.sample_diffusion_device(condition_device, noise_device, steps, selected,
+                                                 seed, action_start, action_steps, action_device,
+                                                 last_error());
 }
 
 #if defined(__MINGW32__) && defined(__AVX2__)

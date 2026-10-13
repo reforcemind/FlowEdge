@@ -49,10 +49,12 @@ int main()
 {
   fe_engine_free(nullptr);
   fe_diffusion_metadata diffusion{};
-  if (fe_engine_action_horizon(nullptr) != 0uz ||
+  if (fe_engine_action_horizon(nullptr) != 0uz || fe_engine_diffusion_cuda_device(nullptr) != -1 ||
       fe_engine_diffusion_metadata(nullptr, &diffusion) != 1 ||
       fe_engine_sample_diffusion(nullptr, nullptr, nullptr, 0uz, FE_DIFFUSION_DDIM, 0u, nullptr) !=
           1 ||
+      fe_engine_sample_diffusion_device(nullptr, nullptr, nullptr, 0uz, FE_DIFFUSION_DDIM, 0u, 0uz,
+                                        0uz, nullptr) != 1 ||
       fe_engine_diffusion_denoise(nullptr, nullptr, nullptr, 0.0F, nullptr) != 1)
     return 1;
   fe_model_metadata delivery_model{};

@@ -152,6 +152,26 @@ buffer. Seeded `scheduler="ddpm"` is deterministic; the DDIM result depends only
 on the condition and supplied initial noise. `diffusion_denoise` runs one
 normalized U-Net pass for verification or profiling.
 
+A CUDA source build also accepts any contiguous CUDA float32 tensors implementing DLPack:
+
+```python
+import torch
+
+start = e.diffusion_metadata["observation_steps"] - 1
+count = e.diffusion_metadata["action_steps"]
+condition = encoder(history).flatten().contiguous()  # CUDA tensor
+noise = torch.randn(e.action_horizon, e.action_dim, device=condition.device)
+actions = torch.empty(count, e.action_dim, device=condition.device)
+e.sample_diffusion_dlpack_into(
+    condition, noise, actions, steps=10, scheduler="ddim", action_start=start
+)
+```
+
+`e.diffusion_cuda_device` identifies the required CUDA device. The call synchronizes before
+returning and writes only the requested action slice. No NumPy staging or device allocation occurs
+inside the call. DDPM still creates its seeded per-step scheduler noise on the host; the default
+DDIM path has no host tensor transfer.
+
 The LeRobot companion adapter exposes the same allocation-conscious pattern through
 `predict_action_chunk_into` and `select_action_into`; reuse those buffers in a control loop.
 

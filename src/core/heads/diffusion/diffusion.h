@@ -85,6 +85,15 @@ public:
   [[nodiscard]] bool sample(std::span<const float> condition, std::span<const float> initial_noise,
                             std::size_t inference_steps, Scheduler scheduler, std::uint64_t seed,
                             std::span<float> workspace, std::span<float> action) noexcept;
+#ifdef FLOWEDGE_CUDA
+  // CUDA-tensor entry point. Inputs and output are device pointers on cuda_device_id().
+  // The output contains a compact action slice beginning at action_start.
+  [[nodiscard]] bool sample_device(const float* condition, const float* initial_noise,
+                                   std::size_t inference_steps, Scheduler scheduler,
+                                   std::uint64_t seed, std::span<float> workspace, float* action,
+                                   std::size_t action_start, std::size_t action_steps) noexcept;
+  [[nodiscard]] int cuda_device_id() const noexcept;
+#endif
 
 private:
   struct ConvWeights

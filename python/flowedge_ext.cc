@@ -73,6 +73,108 @@ using FloatBuffer = TypedBuffer<float>;
 using Int32Buffer = TypedBuffer<std::int32_t>;
 using UInt8Buffer = TypedBuffer<std::uint8_t>;
 
+// Minimal legacy DLPack ABI. Calling __dlpack__ without max_version requests
+// this stable capsule layout and lets the producer synchronize its work to
+// CUDA's legacy default stream (stream=1).
+enum class DLDeviceType : std::int32_t
+{
+  kCuda = 2,
+};
+
+struct DLDevice
+{
+  DLDeviceType device_type;
+  std::int32_t device_id;
+};
+
+struct DLDataType
+{
+  std::uint8_t code;
+  std::uint8_t bits;
+  std::uint16_t lanes;
+};
+
+struct DLTensor
+{
+  void* data;
+  DLDevice device;
+  std::int32_t ndim;
+  DLDataType dtype;
+  std::int64_t* shape;
+  std::int64_t* strides;
+  std::uint64_t byte_offset;
+};
+
+struct DLManagedTensor
+{
+  DLTensor dl_tensor;
+  void* manager_ctx;
+  void (*deleter)(DLManagedTensor* self);
+};
+
+class DLPackCudaTensor
+{
+public:
+  explicit DLPackCudaTensor(py::handle object)
+  {
+    if (!py::hasattr(object, "__dlpack__") || !py::hasattr(object, "__dlpack_device__"))
+      throw std::runtime_error("expected an object implementing the DLPack protocol");
+    const py::tuple device = py::cast<py::tuple>(object.attr("__dlpack_device__")());
+    if (device.size() != 2 || py::cast<int>(device[0]) != static_cast<int>(DLDeviceType::kCuda))
+      throw std::runtime_error("expected a CUDA DLPack tensor");
+    capsule_ = object.attr("__dlpack__")(py::arg("stream") = 1);
+    managed_ = static_cast<DLManagedTensor*>(PyCapsule_GetPointer(capsule_.ptr(), "dltensor"));
+    if (managed_ == nullptr)
+      throw py::error_already_set{};
+    const DLTensor& tensor = managed_->dl_tensor;
+    if (tensor.device.device_type != DLDeviceType::kCuda || tensor.device.device_id < 0 ||
+        tensor.dtype.code != 2u || tensor.dtype.bits != 32u || tensor.dtype.lanes != 1u ||
+        tensor.ndim < 0 || tensor.shape == nullptr || tensor.data == nullptr)
+      throw std::runtime_error("expected a dense CUDA float32 DLPack tensor");
+    device_id_ = tensor.device.device_id;
+    std::size_t expected_stride = 1uz;
+    for (std::int32_t dimension = tensor.ndim; dimension-- > 0;) {
+      const std::int64_t extent = tensor.shape[dimension];
+      if (extent < 0 || (tensor.strides != nullptr &&
+                         tensor.strides[dimension] != static_cast<std::int64_t>(expected_stride)))
+        throw std::runtime_error("expected a C-contiguous CUDA DLPack tensor");
+      if (expected_stride != 0uz && static_cast<std::uint64_t>(extent) >
+                                        std::numeric_limits<std::size_t>::max() / expected_stride)
+        throw std::runtime_error("DLPack tensor size overflows size_t");
+      expected_stride *= static_cast<std::size_t>(extent);
+    }
+    size_ = expected_stride;
+    data_ = reinterpret_cast<float*>(static_cast<std::byte*>(tensor.data) + tensor.byte_offset);
+  }
+
+  ~DLPackCudaTensor()
+  {
+    if (managed_ == nullptr)
+      return;
+    DLManagedTensor* const owned = managed_;
+    managed_ = nullptr;
+    if (PyCapsule_SetName(capsule_.ptr(), "used_dltensor") != 0)
+      PyErr_Clear();
+    if (owned->deleter != nullptr)
+      owned->deleter(owned);
+  }
+
+  DLPackCudaTensor(const DLPackCudaTensor&) = delete;
+  DLPackCudaTensor& operator=(const DLPackCudaTensor&) = delete;
+
+  [[nodiscard]] const float* data() const noexcept { return data_; }
+  [[nodiscard]] float* mutable_data() noexcept { return data_; }
+  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]] int device_id() const noexcept { return device_id_; }
+
+private:
+  py::object capsule_;
+  DLManagedTensor* managed_{};
+  float* data_{};
+  std::size_t size_{};
+  int device_id_{-1};
+};
+
 py::object float_array(py::handle numpy, std::size_t size)
 {
   return numpy.attr("empty")(py::int_(size), py::str("float32"));
@@ -129,6 +231,10 @@ public:
   [[nodiscard]] std::size_t condition_dim() const { return fe_engine_condition_dim(engine_); }
   [[nodiscard]] unsigned thread_count() const { return fe_engine_thread_count(engine_); }
   [[nodiscard]] bool cuda_resident() const { return fe_engine_cuda_resident(engine_) != 0; }
+  [[nodiscard]] int diffusion_cuda_device() const
+  {
+    return fe_engine_diffusion_cuda_device(engine_);
+  }
   [[nodiscard]] py::dict diffusion_metadata() const
   {
     fe_diffusion_metadata metadata{};
@@ -561,6 +667,42 @@ public:
     sample_diffusion_native(condition, noise, action, steps, scheduler, seed);
   }
 
+  void sample_diffusion_dlpack_into(py::handle condition_object, py::handle noise_object,
+                                    py::handle output_object, std::size_t steps,
+                                    std::string_view scheduler, std::uint64_t seed,
+                                    std::size_t action_start)
+  {
+    DLPackCudaTensor condition{condition_object};
+    DLPackCudaTensor noise{noise_object};
+    DLPackCudaTensor action{output_object};
+    const int engine_device = diffusion_cuda_device();
+    if (engine_device < 0)
+      throw std::runtime_error("CUDA tensor sampling requires a device-resident diffusion head");
+    if (condition.device_id() != engine_device || noise.device_id() != engine_device ||
+        action.device_id() != engine_device)
+      throw std::runtime_error("DLPack tensors must use the diffusion head's CUDA device");
+    const std::size_t values = action_horizon() * action_dim();
+    if (condition.size() != condition_dim())
+      throw std::runtime_error("condition length must equal condition_dim");
+    if (noise.size() != values)
+      throw std::runtime_error("noise size must equal action_horizon * action_dim");
+    if (action_dim() == 0uz || action.size() == 0uz || action.size() % action_dim() != 0uz)
+      throw std::runtime_error("output size must be a non-empty multiple of action_dim");
+    const std::size_t action_steps = action.size() / action_dim();
+    if (action_start > action_horizon() || action_steps > action_horizon() - action_start)
+      throw std::runtime_error("output action slice is outside the diffusion horizon");
+    const int scheduler_id = diffusion_scheduler_id(scheduler);
+    int rc{0};
+    {
+      py::gil_scoped_release release;
+      rc = fe_engine_sample_diffusion_device(engine_, condition.data(), noise.data(), steps,
+                                             scheduler_id, seed, action_start, action_steps,
+                                             action.mutable_data());
+    }
+    if (rc != FE_STATUS_OK)
+      throw std::runtime_error(fe_engine_last_error());
+  }
+
   void flow_begin(py::handle condition_object, py::handle noise_object, std::size_t steps,
                   std::string_view method, std::optional<std::uint64_t> generation,
                   std::uint64_t timestamp_ns, std::uint64_t deadline_ns)
@@ -796,6 +938,7 @@ PYBIND11_MODULE(flowedge, m)
       .def_property_readonly("d_model", &Engine::d_model)
       .def_property_readonly("thread_count", &Engine::thread_count)
       .def_property_readonly("cuda_resident", &Engine::cuda_resident)
+      .def_property_readonly("diffusion_cuda_device", &Engine::diffusion_cuda_device)
       .def_property_readonly("model_metadata", &Engine::model_metadata)
       .def_property_readonly("diffusion_metadata", &Engine::diffusion_metadata)
       .def("run", &Engine::run, py::arg("tokens"))
@@ -845,6 +988,10 @@ PYBIND11_MODULE(flowedge, m)
            "sample Diffusion Policy into caller-owned storage", py::arg("condition"),
            py::arg("noise"), py::arg("output"), py::arg("steps") = 10uz,
            py::arg("scheduler") = "ddim", py::arg("seed") = 0u)
+      .def("sample_diffusion_dlpack_into", &Engine::sample_diffusion_dlpack_into,
+           "sample a Diffusion Policy action slice between CUDA DLPack tensors",
+           py::arg("condition"), py::arg("noise"), py::arg("output"), py::arg("steps") = 10uz,
+           py::arg("scheduler") = "ddim", py::arg("seed") = 0u, py::arg("action_start") = 0uz)
       .def("flow_begin", &Engine::flow_begin, "begin a resumable flow solve", py::arg("condition"),
            py::arg("noise"), py::arg("steps") = 10uz, py::arg("method") = "euler",
            py::arg("generation") = py::none(), py::arg("timestamp_ns") = 0u,

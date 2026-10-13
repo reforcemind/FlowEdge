@@ -91,6 +91,9 @@ class FlowEdgeDiffusionPolicy:
             (self.contract.horizon, self.contract.action_dim), dtype=np.float32
         )
         self._sample_diffusion_into = getattr(engine, "sample_diffusion_into", None)
+        self._sample_diffusion_dlpack_into = getattr(
+            engine, "sample_diffusion_dlpack_into", None
+        )
         self._sample_diffusion = engine.sample_diffusion
 
     @classmethod
@@ -122,6 +125,10 @@ class FlowEdgeDiffusionPolicy:
     @property
     def action_steps(self) -> int:
         return self.contract.action_steps
+
+    @property
+    def supports_cuda_tensors(self) -> bool:
+        return self._sample_diffusion_dlpack_into is not None
 
     def reset(self) -> None:
         """Reset the deployment adapter; the current diffusion engine is stateless per call."""
@@ -161,6 +168,49 @@ class FlowEdgeDiffusionPolicy:
         start = self.contract.action_start
         stop = start + self.contract.action_steps
         np.copyto(output, self._horizon[start:stop])
+        return output
+
+    def predict_action_chunk_dlpack_into(
+        self,
+        condition: Any,
+        noise: Any,
+        output: Any,
+        *,
+        steps: int = 10,
+        scheduler: str = "ddim",
+        seed: int = 0,
+    ) -> Any:
+        """Write an action chunk without leaving caller-owned CUDA storage."""
+        if self._sample_diffusion_dlpack_into is None:
+            raise RuntimeError(
+                "the loaded FlowEdge module has no CUDA DLPack entry point"
+            )
+        expected_noise = (self.contract.horizon, self.contract.action_dim)
+        expected_output = (self.contract.action_steps, self.contract.action_dim)
+        if tuple(getattr(condition, "shape", ())) not in {
+            (self.contract.condition_dim,),
+            (1, self.contract.condition_dim),
+        }:
+            raise ValueError(
+                f"condition must contain {self.contract.condition_dim} float32 values"
+            )
+        if tuple(getattr(noise, "shape", ())) != expected_noise:
+            raise ValueError(f"noise must have shape {expected_noise}")
+        if tuple(getattr(output, "shape", ())) != expected_output:
+            raise ValueError(f"output must have shape {expected_output}")
+        if steps <= 0:
+            raise ValueError("steps must be positive")
+        if scheduler not in {"ddim", "ddpm"}:
+            raise ValueError("scheduler must be one of: ddim, ddpm")
+        self._sample_diffusion_dlpack_into(
+            condition,
+            noise,
+            output,
+            steps,
+            scheduler,
+            int(seed),
+            self.contract.action_start,
+        )
         return output
 
     def select_action(

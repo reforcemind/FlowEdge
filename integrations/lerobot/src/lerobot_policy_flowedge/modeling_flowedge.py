@@ -21,6 +21,7 @@ class FlowEdgePolicy(PreTrainedPolicy):
         from flowedge_lerobot.device import config_device
 
         device = config_device(config)
+        self._device = torch.device(device)
         self._policy = FlowEdgeDiffusionPolicy.from_checkpoint(
             config.checkpoint_path, device=device
         )
@@ -66,12 +67,34 @@ class FlowEdgePolicy(PreTrainedPolicy):
             raise ValueError(
                 "encoded observation.state must contain the full condition vector"
             )
-        self._noise = np.empty(
-            (self._policy.metadata.horizon, self._policy.action_dim), dtype=np.float32
+        self._cuda_tensors = (
+            self._device.type == "cuda"
+            and torch.cuda.is_available()
+            and self._policy.supports_cuda_tensors
         )
-        self._chunk = np.empty(
-            (self._policy.action_steps, self._policy.action_dim), dtype=np.float32
+        storage = (
+            {
+                "device": self._device,
+                "dtype": torch.float32,
+            }
+            if self._cuda_tensors
+            else None
         )
+        if storage is not None:
+            self._noise = torch.empty(
+                (self._policy.metadata.horizon, self._policy.action_dim), **storage
+            )
+            self._chunk = torch.empty(
+                (self._policy.action_steps, self._policy.action_dim), **storage
+            )
+        else:
+            self._noise = np.empty(
+                (self._policy.metadata.horizon, self._policy.action_dim),
+                dtype=np.float32,
+            )
+            self._chunk = np.empty(
+                (self._policy.action_steps, self._policy.action_dim), dtype=np.float32
+            )
         self.reset()
 
     def get_optim_params(self) -> dict:
@@ -84,6 +107,9 @@ class FlowEdgePolicy(PreTrainedPolicy):
         if self._encoder is not None:
             self._encoder.reset()
         self._rng = np.random.default_rng(self.config.seed)
+        if self._cuda_tensors:
+            self._torch_rng = torch.Generator(device=self._device)
+            self._torch_rng.manual_seed(self.config.seed)
         self._next_action = self.config.action_steps
         self._condition_value = None
 
@@ -98,32 +124,55 @@ class FlowEdgePolicy(PreTrainedPolicy):
         self._sample(**kwargs)
         # A direct prediction invalidates any queued actions from a previous prediction.
         self._next_action = self.config.action_steps
+        if self._cuda_tensors:
+            return self._chunk[: self.config.action_steps].clone().unsqueeze(0)
         return torch.from_numpy(
             self._chunk[: self.config.action_steps].copy()
         ).unsqueeze(0)
 
     def _sample(self, *, noise=None, steps=None, scheduler=None, seed=None):
         if noise is None:
-            self._rng.standard_normal(
-                self._noise.shape, dtype=np.float32, out=self._noise
-            )
+            if self._cuda_tensors:
+                self._noise.normal_(generator=self._torch_rng)
+            else:
+                self._rng.standard_normal(
+                    self._noise.shape, dtype=np.float32, out=self._noise
+                )
         else:
-            supplied = (
-                noise.detach().cpu().numpy()
-                if isinstance(noise, torch.Tensor)
-                else np.asarray(noise)
-            )
+            if self._cuda_tensors:
+                supplied = torch.as_tensor(
+                    noise, device=self._device, dtype=torch.float32
+                )
+            else:
+                supplied = (
+                    noise.detach().cpu().numpy()
+                    if isinstance(noise, torch.Tensor)
+                    else np.asarray(noise)
+                )
             if supplied.shape == (1, *self._noise.shape):
                 supplied = supplied[0]
-            if supplied.shape != self._noise.shape or not np.isfinite(supplied).all():
+            finite = (
+                bool(torch.isfinite(supplied).all())
+                if self._cuda_tensors
+                else np.isfinite(supplied).all()
+            )
+            if supplied.shape != self._noise.shape or not finite:
                 raise ValueError("noise must match the finite full-horizon noise shape")
-            np.copyto(self._noise, supplied)
+            if self._cuda_tensors:
+                self._noise.copy_(supplied)
+            else:
+                np.copyto(self._noise, supplied)
         condition = (
             self._encoder.condition()
             if self._encoder is not None
             else self._condition_value
         )
-        self._policy.predict_action_chunk_into(
+        sample = (
+            self._policy.predict_action_chunk_dlpack_into
+            if self._cuda_tensors
+            else self._policy.predict_action_chunk_into
+        )
+        sample(
             condition,
             self._noise,
             self._chunk,
@@ -137,7 +186,11 @@ class FlowEdgePolicy(PreTrainedPolicy):
         if self._next_action >= self.config.action_steps:
             self._sample(**kwargs)
             self._next_action = 0
-        action = torch.from_numpy(self._chunk[self._next_action].copy()).unsqueeze(0)
+        action = (
+            self._chunk[self._next_action].clone().unsqueeze(0)
+            if self._cuda_tensors
+            else torch.from_numpy(self._chunk[self._next_action].copy()).unsqueeze(0)
+        )
         self._next_action += 1
         return action
 
@@ -155,9 +208,17 @@ class FlowEdgePolicy(PreTrainedPolicy):
             )
         if not torch.isfinite(state).all():
             raise ValueError("encoded condition contains non-finite values")
-        self._condition_value = (
-            state.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1)
-        )
+        if self._cuda_tensors:
+            self._condition_value = (
+                state.detach()
+                .to(self._device, dtype=torch.float32)
+                .contiguous()
+                .reshape(-1)
+            )
+        else:
+            self._condition_value = (
+                state.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1)
+            )
 
 
 # LeRobot resolves third-party classes from the configuration module's sibling

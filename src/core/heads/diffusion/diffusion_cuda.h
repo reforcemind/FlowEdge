@@ -97,6 +97,7 @@ public:
                              std::span<float> predicted_noise) noexcept;
   [[nodiscard]] bool begin(std::span<const float> condition,
                            std::span<const float> normalized_sample) noexcept;
+  [[nodiscard]] bool begin_device(const float* condition, const float* normalized_sample) noexcept;
   [[nodiscard]] bool denoise_current(float timestep) noexcept;
   void ddim_update(float sqrt_alpha_t, float sqrt_beta_t, float sqrt_alpha_prev,
                    float sqrt_one_minus_prev, bool clip, float clip_range) noexcept;
@@ -104,6 +105,9 @@ public:
                                  float sample_coefficient, float sqrt_variance, bool clip,
                                  float clip_range, const float* host_noise) noexcept;
   [[nodiscard]] bool copy_x(std::span<float> out) noexcept;
+  [[nodiscard]] bool copy_action_device(float* out, std::size_t action_start,
+                                        std::size_t action_steps) noexcept;
+  [[nodiscard]] int device_id() const noexcept { return device_id_; }
 
 private:
   struct Conv
@@ -208,6 +212,7 @@ private:
   float* gaussian_{};
   float* bump_{};
   std::size_t bump_cap_{};
+  int device_id_{-1};
 };
 
 } // namespace fe

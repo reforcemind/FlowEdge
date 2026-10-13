@@ -226,6 +226,9 @@ unsigned fe_engine_thread_count(const fe_engine* engine);
  */
 int fe_engine_cuda_resident(const fe_engine* engine);
 
+/** CUDA device owning the resident Diffusion Policy head, or -1 when unavailable. */
+int fe_engine_diffusion_cuda_device(const fe_engine* engine);
+
 /** Fill versioned architecture, precision, dimension, and model-digest metadata. */
 int fe_engine_model_metadata(const fe_engine* engine, fe_model_metadata* metadata);
 
@@ -276,6 +279,19 @@ size_t fe_engine_condition_dim(const fe_engine* engine);
  */
 int fe_engine_sample_diffusion(fe_engine* engine, const float* condition, const float* noise,
                                size_t steps, int scheduler, uint64_t seed, float* action);
+
+/**
+ * @brief Sample directly between caller-owned CUDA tensors.
+ *
+ * All pointers must address contiguous float32 storage on
+ * fe_engine_diffusion_cuda_device(engine). The output is compact and contains
+ * action_steps rows beginning at action_start. This call synchronizes the CUDA
+ * device before returning; it does not allocate device memory.
+ */
+int fe_engine_sample_diffusion_device(fe_engine* engine, const float* condition_device,
+                                      const float* noise_device, size_t steps, int scheduler,
+                                      uint64_t seed, size_t action_start, size_t action_steps,
+                                      float* action_device);
 
 /** Run one ConditionalUnet1D epsilon-prediction pass in normalized action space. */
 int fe_engine_diffusion_denoise(fe_engine* engine, const float* condition,

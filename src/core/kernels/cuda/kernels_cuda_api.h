@@ -64,6 +64,7 @@ void film(float* x, const float* scale, const float* bias, std::size_t channels,
 void diffusion_timestep_embedding(float timestep, float* out, std::size_t n) noexcept;
 
 [[nodiscard]] bool device_copy_d2d(void* dst, const void* src, std::size_t bytes) noexcept;
+[[nodiscard]] bool device_synchronize() noexcept;
 
 void mish_device(float* x, std::size_t n) noexcept;
 void add_bias_device(float* x, const float* bias, std::size_t n) noexcept;
@@ -98,6 +99,9 @@ void ddpm_update_device(float* x, const float* eps, const float* noise, std::siz
                         float sqrt_alpha_t, float sqrt_beta_t, float original_coefficient,
                         float sample_coefficient, float sqrt_variance, bool clip,
                         float clip_range) noexcept;
+void diffusion_unnormalize_device(const float* normalized, const float* action_min,
+                                  const float* action_max, float* action, std::size_t action_start,
+                                  std::size_t action_steps, std::size_t action_dim) noexcept;
 
 void rmsnorm_device(const float* in, const float* weight, float* out, std::size_t rows,
                     std::size_t dim) noexcept;

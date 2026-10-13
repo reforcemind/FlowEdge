@@ -59,6 +59,14 @@ public:
   {
     return model_.cuda_resident() || flow_.cuda_resident() || diffusion_.cuda_resident();
   }
+  [[nodiscard]] int diffusion_cuda_device() const noexcept
+  {
+#ifdef FLOWEDGE_CUDA
+    return diffusion_.cuda_device_id();
+#else
+    return -1;
+#endif
+  }
   [[nodiscard]] bool has_compatible_flow_head() const noexcept;
   [[nodiscard]] std::size_t d_model() const noexcept;
   [[nodiscard]] std::size_t n_layers() const noexcept;
@@ -112,6 +120,10 @@ public:
   int sample_diffusion(const float* condition, const float* noise, std::size_t steps,
                        DiffusionHead::Scheduler scheduler, std::uint64_t seed, float* action,
                        const char*& error) noexcept;
+  int sample_diffusion_device(const float* condition, const float* noise, std::size_t steps,
+                              DiffusionHead::Scheduler scheduler, std::uint64_t seed,
+                              std::size_t action_start, std::size_t action_steps, float* action,
+                              const char*& error) noexcept;
   int denoise_diffusion(const float* condition, const float* normalized_sample, float timestep,
                         float* predicted_noise, const char*& error) noexcept;
   int flow_begin(const float* condition, const float* noise, std::size_t steps,
