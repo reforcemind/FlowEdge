@@ -27,6 +27,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(
+        "--reference-compile",
+        default="none",
+        choices=(
+            "none",
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ),
+    )
+    parser.add_argument(
         "--observations",
         type=Path,
         help="reuse a previously captured observations.npz instead of gym-pusht",
@@ -71,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         str(args.threads),
         "--device",
         args.device,
+        "--reference-compile",
+        args.reference_compile,
         "--seed",
         str(args.seed),
         "--output",

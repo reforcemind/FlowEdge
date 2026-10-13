@@ -1,0 +1,33 @@
+{
+  "tool": "flowedge_cuda_dp_mix",
+  "device": "NVIDIA GeForce GTX 1650",
+  "memory_bus_bits": 128,
+  "memory_clock_khz": 4001000,
+  "theoretical_memory_gb_s": 128.032,
+  "checkpoint": null,
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 214.400, "calls": 40, "estimated_ms": 8.576, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 101.696, "calls": 30, "estimated_ms": 3.051, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 333.632, "calls": 30, "estimated_ms": 10.009, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 192.768, "calls": 30, "estimated_ms": 5.783, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 747.808, "calls": 70, "estimated_ms": 52.347, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 752.896, "calls": 10, "estimated_ms": 7.529, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 110.848, "calls": 10, "estimated_ms": 1.108, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 301.216, "calls": 10, "estimated_ms": 3.012, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 276.480, "calls": 10, "estimated_ms": 2.765, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 157.696, "calls": 10, "estimated_ms": 1.577, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 309.024, "calls": 10, "estimated_ms": 3.090, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 182.272, "calls": 10, "estimated_ms": 1.823, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 11.360, "calls": 80, "estimated_ms": 0.909, "kind": "elementwise"},
+    {"name": "group_norm 512 L16", "p50_us": 86.016, "calls": 50, "estimated_ms": 4.301, "kind": "elementwise"},
+    {"name": "group_norm 1024 L8", "p50_us": 11.424, "calls": 40, "estimated_ms": 0.457, "kind": "elementwise"},
+    {"name": "norm+mish+residual separate", "p50_us": 26.240, "calls": 120, "estimated_ms": 3.149, "kind": "elementwise"},
+    {"name": "norm+mish+residual fused", "p50_us": 12.928, "calls": 120, "estimated_ms": 1.551, "kind": "elementwise"},
+    {"name": "mish 8192", "p50_us": 6.272, "calls": 170, "estimated_ms": 1.066, "kind": "elementwise"},
+    {"name": "gemm 1x260x1024", "p50_us": 11.328, "calls": 40, "estimated_ms": 0.453, "kind": "gemm"},
+    {"name": "gemm 1x260x2048", "p50_us": 25.984, "calls": 40, "estimated_ms": 1.039, "kind": "gemm"},
+    {"name": "gemm 1x260x4096", "p50_us": 43.200, "calls": 40, "estimated_ms": 1.728, "kind": "gemm"},
+    {"name": "gemm 1x128x512", "p50_us": 7.776, "calls": 10, "estimated_ms": 0.078, "kind": "gemm"},
+    {"name": "gemm 1x512x128", "p50_us": 7.648, "calls": 10, "estimated_ms": 0.076, "kind": "gemm"}
+  ]
+}

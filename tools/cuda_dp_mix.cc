@@ -88,7 +88,8 @@ const char* json_kind(const std::string& name)
     return "gemm";
   if (name.rfind("upsample ", 0uz) == 0uz)
     return "upsample";
-  if (name.rfind("group_norm", 0uz) == 0uz || name.rfind("mish", 0uz) == 0uz)
+  if (name.rfind("group_norm", 0uz) == 0uz || name.rfind("mish", 0uz) == 0uz ||
+      name.rfind("norm+mish", 0uz) == 0uz)
     return "elementwise";
   return "conv";
 }
@@ -111,6 +112,14 @@ void write_json(const char* path, const char* checkpoint)
   };
   std::fprintf(file, "{\n");
   std::fprintf(file, "  \"tool\": \"flowedge_cuda_dp_mix\",\n");
+  cudaDeviceProp properties{};
+  if (cudaGetDeviceProperties(&properties, 0) == cudaSuccess) {
+    std::fprintf(file, "  \"device\": \"%s\",\n", escape(properties.name).c_str());
+    std::fprintf(file, "  \"memory_bus_bits\": %d,\n", properties.memoryBusWidth);
+    std::fprintf(file, "  \"memory_clock_khz\": %d,\n", properties.memoryClockRate);
+    std::fprintf(file, "  \"theoretical_memory_gb_s\": %.3f,\n",
+                 2.0 * properties.memoryClockRate * properties.memoryBusWidth / 8.0 / 1e6);
+  }
   if (checkpoint != nullptr) {
     const std::string escaped = escape(checkpoint);
     std::fprintf(file, "  \"checkpoint\": \"%s\",\n", escaped.c_str());
@@ -210,12 +219,35 @@ int main(int argc, char** argv)
     if (!x.ok() || !w.ok() || !b.ok())
       return 0.0;
     return median_us(
-        [&] { fe::cuda_ops::group_norm_device(x.ptr, w.ptr, b.ptr, channels, length, 8uz, 1.0e-5F); },
+        [&] {
+          fe::cuda_ops::group_norm_device(x.ptr, w.ptr, b.ptr, channels, length, 8uz, 1.0e-5F);
+        },
         8, 40);
   };
   report("group_norm 2048 L4", gnorm(2048uz, 4uz), 80);
   report("group_norm 512 L16", gnorm(512uz, 16uz), 50);
   report("group_norm 1024 L8", gnorm(1024uz, 8uz), 40);
+  for (bool fused : {false, true}) {
+    DeviceBuffer x{8192uz}, w{2048uz, 1.0F}, b{2048uz, 0.01F}, residual{8192uz};
+    if (!x.ok() || !w.ok() || !b.ok() || !residual.ok()) {
+      std::fprintf(stderr, "norm/mish benchmark allocation failed\n");
+      return 3;
+    }
+    report(fused ? "norm+mish+residual fused" : "norm+mish+residual separate",
+           median_us(
+               [&] {
+                 if (fused)
+                   fe::cuda_ops::group_norm_mish_device(x.ptr, w.ptr, b.ptr, 2048uz, 4uz, 8uz,
+                                                        1.0e-5F, nullptr, residual.ptr);
+                 else {
+                   fe::cuda_ops::group_norm_device(x.ptr, w.ptr, b.ptr, 2048uz, 4uz, 8uz, 1.0e-5F);
+                   fe::cuda_ops::mish_device(x.ptr, 8192uz);
+                   fe::cuda_ops::add_scaled_device(x.ptr, residual.ptr, 1.0F, 8192uz);
+                 }
+               },
+               8, 40),
+           120);
+  }
   report(
       "mish 8192",
       [&] {
@@ -235,13 +267,23 @@ int main(int argc, char** argv)
         [&] { fe::cuda_ops::matmul_f32_device(in.ptr, w.ptr, out.ptr, 1uz, in_dim, out_dim); }, 8,
         24);
   };
+  report("gemm 1x260x1024", gemm(260uz, 1024uz), 40);
+  report("gemm 1x260x2048", gemm(260uz, 2048uz), 40);
   report("gemm 1x260x4096", gemm(260uz, 4096uz), 40);
+  report("gemm 1x128x512", gemm(128uz, 512uz), 10);
+  report("gemm 1x512x128", gemm(512uz, 128uz), 10);
 
   if (checkpoint != nullptr) {
     fe_engine* const engine = fe_engine_load_with_threads(checkpoint, 0u);
     if (engine == nullptr) {
       std::fprintf(stderr, "load failed: %s\n", fe_engine_last_error());
       return 3;
+    }
+    if (!fe_engine_cuda_resident(engine)) {
+      std::fprintf(stderr,
+                   "CUDA benchmark requires device-resident weights; CPU fallback rejected\n");
+      fe_engine_free(engine);
+      return 4;
     }
     std::vector<float> condition(fe_engine_condition_dim(engine), 0.1F);
     std::vector<float> noise(fe_engine_action_horizon(engine) * fe_engine_action_dim(engine));

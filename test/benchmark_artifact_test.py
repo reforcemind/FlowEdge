@@ -79,6 +79,19 @@ class BenchmarkArtifactTest(unittest.TestCase):
         with self.assertRaises(benchmark_artifact.ArtifactError):
             benchmark_artifact.validate(document)
 
+    def test_compiled_reference_is_explicit_in_report(self):
+        document = measured()
+        document["comparison"] = {
+            "candidate": "FlowEdge",
+            "reference": "PyTorch",
+            "reference_framework": "PyTorch",
+            "reference_compile": "default",
+            "compiled_scope": "U-Net only",
+        }
+        report = benchmark_artifact.render(benchmark_artifact.validate(document))
+        self.assertIn("Reference compile mode | `default`", report)
+        self.assertIn("Compiled scope | U-Net only", report)
+
     def test_unknown_allocations_need_a_reason_and_are_not_rendered_as_zero(self):
         document = measured()
         document["measurements"]["flowedge"]["allocations"] = {

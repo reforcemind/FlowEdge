@@ -1,0 +1,24 @@
+{
+  "tool": "flowedge_cuda_dp_mix",
+  "checkpoint": "models/diffusion_pusht.flowedge.safetensors",
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 214.560, "calls": 40, "estimated_ms": 8.582, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 102.144, "calls": 30, "estimated_ms": 3.064, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 338.336, "calls": 30, "estimated_ms": 10.150, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 190.176, "calls": 30, "estimated_ms": 5.705, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 748.704, "calls": 70, "estimated_ms": 52.409, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 735.552, "calls": 10, "estimated_ms": 7.356, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 112.384, "calls": 10, "estimated_ms": 1.124, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 303.904, "calls": 10, "estimated_ms": 3.039, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 276.768, "calls": 10, "estimated_ms": 2.768, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 139.744, "calls": 10, "estimated_ms": 1.397, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 311.328, "calls": 10, "estimated_ms": 3.113, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 164.512, "calls": 10, "estimated_ms": 1.645, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 11.808, "calls": 80, "estimated_ms": 0.945, "kind": "elementwise"},
+    {"name": "group_norm 512 L16", "p50_us": 12.032, "calls": 50, "estimated_ms": 0.602, "kind": "elementwise"},
+    {"name": "group_norm 1024 L8", "p50_us": 26.208, "calls": 40, "estimated_ms": 1.048, "kind": "elementwise"},
+    {"name": "mish 8192", "p50_us": 30.560, "calls": 170, "estimated_ms": 5.195, "kind": "elementwise"},
+    {"name": "gemm 1x260x4096", "p50_us": 74.432, "calls": 40, "estimated_ms": 2.977, "kind": "gemm"},
+    {"name": "native DDIM x10", "p50_us": 108844.765, "calls": 1, "estimated_ms": 108.845, "kind": "native"}
+  ]
+}

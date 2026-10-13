@@ -1,0 +1,30 @@
+{
+  "tool": "flowedge_cuda_dp_mix",
+  "device": "NVIDIA GeForce GTX 1650",
+  "memory_bus_bits": 128,
+  "memory_clock_khz": 4001000,
+  "theoretical_memory_gb_s": 128.032,
+  "checkpoint": "models/diffusion_pusht.flowedge.safetensors",
+  "rows": [
+    {"name": "conv 512 L16 K5", "p50_us": 215.104, "calls": 40, "estimated_ms": 8.604, "kind": "conv"},
+    {"name": "conv 512 L8 K5", "p50_us": 102.336, "calls": 30, "estimated_ms": 3.070, "kind": "conv"},
+    {"name": "conv 1024 L8 K5", "p50_us": 388.992, "calls": 30, "estimated_ms": 11.670, "kind": "conv"},
+    {"name": "conv 1024 L4 K5", "p50_us": 193.152, "calls": 30, "estimated_ms": 5.795, "kind": "conv"},
+    {"name": "conv 2048 L4 K5", "p50_us": 732.512, "calls": 70, "estimated_ms": 51.276, "kind": "conv"},
+    {"name": "conv 4096->1024 L4 K5", "p50_us": 736.576, "calls": 10, "estimated_ms": 7.366, "kind": "conv"},
+    {"name": "downsample 512 L16 K3", "p50_us": 111.680, "calls": 10, "estimated_ms": 1.117, "kind": "conv"},
+    {"name": "downsample 1024 L8 K3", "p50_us": 304.320, "calls": 10, "estimated_ms": 3.043, "kind": "conv"},
+    {"name": "upsample 1024 L4->8 K4", "p50_us": 319.424, "calls": 10, "estimated_ms": 3.194, "kind": "upsample"},
+    {"name": "upsample 512 L8->16 K4", "p50_us": 141.184, "calls": 10, "estimated_ms": 1.412, "kind": "upsample"},
+    {"name": "upsample 1024 k-major", "p50_us": 311.296, "calls": 10, "estimated_ms": 3.113, "kind": "upsample"},
+    {"name": "upsample 512 k-major", "p50_us": 163.840, "calls": 10, "estimated_ms": 1.638, "kind": "upsample"},
+    {"name": "group_norm 2048 L4", "p50_us": 12.224, "calls": 80, "estimated_ms": 0.978, "kind": "elementwise"},
+    {"name": "group_norm 512 L16", "p50_us": 12.032, "calls": 50, "estimated_ms": 0.602, "kind": "elementwise"},
+    {"name": "group_norm 1024 L8", "p50_us": 11.904, "calls": 40, "estimated_ms": 0.476, "kind": "elementwise"},
+    {"name": "norm+mish+residual separate", "p50_us": 16.480, "calls": 120, "estimated_ms": 1.978, "kind": "elementwise"},
+    {"name": "norm+mish+residual fused", "p50_us": 13.792, "calls": 120, "estimated_ms": 1.655, "kind": "elementwise"},
+    {"name": "mish 8192", "p50_us": 6.560, "calls": 170, "estimated_ms": 1.115, "kind": "elementwise"},
+    {"name": "gemm 1x260x4096", "p50_us": 75.776, "calls": 40, "estimated_ms": 3.031, "kind": "gemm"},
+    {"name": "native DDIM x10", "p50_us": 107702.751, "calls": 1, "estimated_ms": 107.703, "kind": "native"}
+  ]
+}

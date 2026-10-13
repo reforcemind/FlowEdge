@@ -121,6 +121,18 @@ def main(argv=None):
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(
+        "--reference-compile",
+        default="none",
+        choices=(
+            "none",
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ),
+        help="compile the reference U-Net; warmup excludes compilation from measured samples",
+    )
+    parser.add_argument(
         "--observations",
         type=Path,
         help="reuse a previously captured observations.npz instead of gym-pusht",
@@ -130,6 +142,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if min(args.steps, args.iterations, args.threads) <= 0 or args.warmup < 0:
         parser.error("invalid step, iteration, thread, or warmup count")
+    if args.reference_compile != "none" and args.warmup == 0:
+        parser.error("compiled reference requires at least one warmup iteration")
     torch.set_num_threads(args.threads)
     import flowedge
     from .cli import peak_rss_bytes
@@ -214,14 +228,20 @@ def main(argv=None):
         flush_cuda()
         startup = perf_counter_ns()
         reference = TorchDiffusionReference(
-            args.source, contract_steps["condition_dim"], device=args.device
+            args.source,
+            contract_steps["condition_dim"],
+            device=args.device,
+            compile_mode=args.reference_compile,
         )
         reference_startup = (perf_counter_ns() - startup) / 1e6
         lerobot_chunks = time_policy_loop("lerobot", reference, **loop_args)
     else:
         startup = perf_counter_ns()
         reference = TorchDiffusionReference(
-            args.source, contract_steps["condition_dim"], device=args.device
+            args.source,
+            contract_steps["condition_dim"],
+            device=args.device,
+            compile_mode=args.reference_compile,
         )
         reference_startup = (perf_counter_ns() - startup) / 1e6
         flowedge_chunks = []
@@ -335,6 +355,12 @@ def main(argv=None):
             "candidate": "FlowEdge native runtime",
             "reference": "LeRobot policy executed with PyTorch",
             "reference_framework": "PyTorch",
+            "reference_compile": args.reference_compile,
+            "compiled_scope": (
+                "none; eager reference"
+                if args.reference_compile == "none"
+                else "U-Net only; encoder and DDIM scheduler remain eager"
+            ),
             "scope": (
                 "matched observation encoder, history, noise, and DDIM schedule on CUDA; "
                 "FlowEdge engine is freed before the PyTorch U-Net is loaded; "

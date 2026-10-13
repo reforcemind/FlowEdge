@@ -10,6 +10,27 @@ import numpy as np
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
 class ReplayDeviceTests(unittest.TestCase):
+    def test_compiled_reference_requires_warmup_before_loading_model(self):
+        from flowedge_lerobot.benchmark import main
+
+        with self.assertRaises(SystemExit) as raised:
+            main(
+                [
+                    "missing.safetensors",
+                    "--source",
+                    "missing",
+                    "--revision",
+                    "test",
+                    "--output",
+                    "unused.json",
+                    "--reference-compile",
+                    "default",
+                    "--warmup",
+                    "0",
+                ]
+            )
+        self.assertEqual(raised.exception.code, 2)
+
     def test_cpu_is_always_allowed(self):
         from flowedge_lerobot.benchmark import require_replay_device
 
@@ -20,10 +41,14 @@ class ReplayDeviceTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             require_replay_device("metal", SimpleNamespace(cuda=True))
-        with patch("flowedge_lerobot.benchmark.torch.cuda.is_available", return_value=False):
+        with patch(
+            "flowedge_lerobot.benchmark.torch.cuda.is_available", return_value=False
+        ):
             with self.assertRaises(RuntimeError):
                 require_replay_device("cuda", SimpleNamespace(cuda=True))
-        with patch("flowedge_lerobot.benchmark.torch.cuda.is_available", return_value=True):
+        with patch(
+            "flowedge_lerobot.benchmark.torch.cuda.is_available", return_value=True
+        ):
             with self.assertRaises(RuntimeError):
                 require_replay_device("cuda", SimpleNamespace(cuda=False))
             require_replay_device("cuda", SimpleNamespace(cuda=True))
