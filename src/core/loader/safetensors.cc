@@ -41,61 +41,64 @@ struct FileCloser
 
 struct MappedFile
 {
+  std::shared_ptr<const std::byte> owner{};
   const std::byte* data{};
   std::size_t size{0uz};
 
 #ifdef _WIN32
-  HANDLE file{INVALID_HANDLE_VALUE}, mapping{};
-
   [[nodiscard]] static std::expected<MappedFile, const char*> open(const char* p) noexcept
   {
-    MappedFile mf;
-    mf.file = CreateFileA(p, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                          FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (mf.file == INVALID_HANDLE_VALUE)
+    const HANDLE file = CreateFileA(p, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
       return std::unexpected("Failed to open safetensors file");
     LARGE_INTEGER sz{};
-    if (!GetFileSizeEx(mf.file, &sz)) {
-      mf.close();
+    if (!GetFileSizeEx(file, &sz)) {
+      CloseHandle(file);
       return std::unexpected("Failed to get safetensors file size");
     }
     if (sz.QuadPart < 0 ||
         static_cast<unsigned long long>(sz.QuadPart) > std::numeric_limits<std::size_t>::max()) {
-      mf.close();
+      CloseHandle(file);
       return std::unexpected("Safetensors file size is invalid");
     }
-    mf.size = static_cast<std::size_t>(sz.QuadPart);
-    mf.mapping = CreateFileMappingA(mf.file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    if (!mf.mapping) {
-      mf.close();
+    const std::size_t size = static_cast<std::size_t>(sz.QuadPart);
+    const HANDLE mapping = CreateFileMappingA(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    if (!mapping) {
+      CloseHandle(file);
       return std::unexpected("Failed to create file mapping");
     }
-    mf.data = static_cast<const std::byte*>(MapViewOfFile(mf.mapping, FILE_MAP_READ, 0, 0, 0));
-    if (!mf.data) {
-      mf.close();
+    const auto* data =
+        static_cast<const std::byte*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+    CloseHandle(mapping);
+    CloseHandle(file);
+    if (!data)
       return std::unexpected("Failed to map view of file");
-    }
 #if _WIN32_WINNT >= 0x0602
-    WIN32_MEMORY_RANGE_ENTRY range{const_cast<void*>(static_cast<const void*>(mf.data)), mf.size};
+    WIN32_MEMORY_RANGE_ENTRY range{const_cast<void*>(static_cast<const void*>(data)), size};
     PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);
 #endif
-    return mf;
+    try {
+      return MappedFile{.owner =
+                            std::shared_ptr<const std::byte>{data,
+                                                             [](const std::byte* view) noexcept {
+                                                               if (view != nullptr)
+                                                                 UnmapViewOfFile(view);
+                                                             }},
+                        .data = data,
+                        .size = size};
+    } catch (...) {
+      UnmapViewOfFile(data);
+      return std::unexpected("Out of memory retaining safetensors mapping");
+    }
   }
   void close() noexcept
   {
-    if (data)
-      UnmapViewOfFile(data);
-    if (mapping)
-      CloseHandle(mapping);
-    if (file != INVALID_HANDLE_VALUE)
-      CloseHandle(file);
+    owner.reset();
     data = nullptr;
-    mapping = nullptr;
-    file = INVALID_HANDLE_VALUE;
+    size = 0uz;
   }
 #else
-  void* mapped_data{};
-
   [[nodiscard]] static std::expected<MappedFile, const char*> open(const char* p) noexcept
   {
     std::unique_ptr<FILE, FileCloser> fp{std::fopen(p, "rb")};
@@ -105,26 +108,36 @@ struct MappedFile
     struct stat st = {};
     if (fstat(fd, &st) < 0)
       return std::unexpected("Failed to stat safetensors file");
-    MappedFile mf;
     if (st.st_size < 0 ||
         static_cast<unsigned long long>(st.st_size) > std::numeric_limits<std::size_t>::max())
       return std::unexpected("Safetensors file size is invalid");
-    mf.size = static_cast<std::size_t>(st.st_size);
-    mf.mapped_data = mmap(nullptr, mf.size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (mf.mapped_data == MAP_FAILED)
+    const std::size_t size = static_cast<std::size_t>(st.st_size);
+    void* const mapped_data = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapped_data == MAP_FAILED)
       return std::unexpected("Failed to mmap safetensors file");
-    mf.data = static_cast<const std::byte*>(mf.mapped_data);
 #if defined(__linux__)
-    madvise(mf.mapped_data, mf.size, MADV_SEQUENTIAL | MADV_WILLNEED);
+    madvise(mapped_data, size, MADV_SEQUENTIAL | MADV_WILLNEED);
 #endif
-    return mf;
+    const auto* data = static_cast<const std::byte*>(mapped_data);
+    try {
+      return MappedFile{
+          .owner = std::shared_ptr<const std::byte>{data,
+                                                    [size](const std::byte* view) noexcept {
+                                                      if (view != nullptr)
+                                                        munmap(const_cast<std::byte*>(view), size);
+                                                    }},
+          .data = data,
+          .size = size};
+    } catch (...) {
+      munmap(mapped_data, size);
+      return std::unexpected("Out of memory retaining safetensors mapping");
+    }
   }
   void close() noexcept
   {
-    if (mapped_data)
-      munmap(mapped_data, size);
-    mapped_data = nullptr;
+    owner.reset();
     data = nullptr;
+    size = 0uz;
   }
 #endif
 };
@@ -425,6 +438,56 @@ struct TensorSpanTracker
                              static_cast<std::size_t>(header_len)}};
 }
 
+[[nodiscard]] std::expected<void, const char*> load_tensor_views(
+    std::string_view json, const std::byte* weights_base, std::uint64_t data_size, Arena* arena,
+    std::span<TensorView> out, std::size_t& tensors_loaded, std::size_t& weight_bytes) noexcept
+{
+  tensors_loaded = 0uz;
+  weight_bytes = 0uz;
+  TensorSpanTracker spans{.data_size = data_size};
+  const bool ok =
+      foreach_tensor(json,
+                     [&](std::string_view name, std::uint64_t byte_off, std::uint64_t byte_len,
+                         const std::array<std::uint64_t, 4>& shape, std::uint8_t ndim, bool bf16,
+                         bool supported_dtype) noexcept -> bool {
+                       if (!supported_dtype)
+                         return true;
+                       if (tensors_loaded >= out.size()) [[unlikely]]
+                         return false;
+                       if (!spans.add(byte_off, byte_len)) [[unlikely]]
+                         return false;
+                       if (!valid_tensor_shape(shape, ndim, byte_len, bf16) ||
+                           byte_len > std::numeric_limits<std::size_t>::max() - weight_bytes)
+                         return false;
+
+                       const std::byte* data = weights_base + byte_off;
+                       if (arena != nullptr) {
+                         auto* const copy = arena->alloc_array<std::byte, kSimdAlign>(byte_len);
+                         if (copy == nullptr) [[unlikely]]
+                           return false;
+                         std::memcpy(copy, data, byte_len);
+                         data = copy;
+                       }
+
+                       TensorView& tv = out[tensors_loaded++];
+                       tv.data = data;
+                       tv.bytes = static_cast<std::size_t>(byte_len);
+                       tv.dtype = bf16 ? TensorView::Dtype::BF16 : TensorView::Dtype::F32;
+                       tv.ndim = ndim;
+                       for (std::size_t i{0uz}; i < 4uz; ++i)
+                         tv.shape[i] = (i < ndim) ? static_cast<std::size_t>(shape[i]) : 0uz;
+                       const std::size_t nlen = std::min(name.size(), tv.name.size() - 1uz);
+                       std::memcpy(tv.name.data(), name.data(), nlen);
+                       tv.name[nlen] = '\0';
+                       weight_bytes += static_cast<std::size_t>(byte_len);
+                       return true;
+                     });
+
+  if (!ok || tensors_loaded == 0uz)
+    return std::unexpected("Failed during tensor iteration or out of bounds");
+  return {};
+}
+
 } // namespace
 
 std::expected<void, const char*> load_safetensors(std::string_view path, Arena& arena,
@@ -441,44 +504,12 @@ std::expected<void, const char*> load_safetensors(std::string_view path, Arena& 
   const std::string_view json = mapped.json;
   const std::byte* const weights_base = mf.data + 8uz + json.size();
   const std::uint64_t data_size = mf.size - 8uz - json.size();
-  TensorSpanTracker spans{.data_size = data_size};
-
-  const bool ok =
-      foreach_tensor(json,
-                     [&](std::string_view name, std::uint64_t byte_off, std::uint64_t byte_len,
-                         const std::array<std::uint64_t, 4>& shape, std::uint8_t ndim, bool bf16,
-                         bool supported_dtype) noexcept -> bool {
-                       if (!supported_dtype)
-                         return true;
-                       if (tensors_loaded >= out.size()) [[unlikely]]
-                         return false;
-                       if (!spans.add(byte_off, byte_len)) [[unlikely]]
-                         return false;
-                       if (!valid_tensor_shape(shape, ndim, byte_len, bf16))
-                         return false;
-                       // store bytes; matmul widens inline
-                       auto* const dst = arena.alloc_array<std::byte, kSimdAlign>(byte_len);
-                       if (!dst) [[unlikely]]
-                         return false;
-                       std::memcpy(dst, weights_base + byte_off, byte_len);
-
-                       TensorView& tv = out[tensors_loaded++];
-                       tv.data = dst;
-                       tv.bytes = static_cast<std::size_t>(byte_len);
-                       tv.dtype = bf16 ? TensorView::Dtype::BF16 : TensorView::Dtype::F32;
-                       tv.ndim = ndim;
-                       for (std::size_t i{0uz}; i < 4uz; ++i)
-                         tv.shape[i] = (i < ndim) ? static_cast<std::size_t>(shape[i]) : 0uz;
-                       const std::size_t nlen = std::min(name.size(), tv.name.size() - 1uz);
-                       std::memcpy(tv.name.data(), name.data(), nlen);
-                       tv.name[nlen] = '\0';
-                       return true;
-                     });
+  std::size_t weight_bytes{0uz};
+  const auto loaded =
+      load_tensor_views(json, weights_base, data_size, &arena, out, tensors_loaded, weight_bytes);
 
   mf.close();
-  if (!ok || tensors_loaded == 0uz)
-    return std::unexpected("Failed during tensor iteration or out of bounds");
-  return {};
+  return loaded;
 }
 
 std::size_t safetensors_weight_bytes(std::string_view path) noexcept
@@ -615,10 +646,9 @@ std::expected<void, const char*> inspect_safetensors(std::string_view path,
   return {};
 }
 
-ModelWeights::ModelWeights(std::size_t weight_bytes,
+ModelWeights::ModelWeights(std::shared_ptr<const std::byte> mapping, std::size_t mapping_bytes,
                            std::optional<DeploymentProfile> deployment_profile)
-    : storage_(weight_bytes + (kMaxTensors * (kSimdAlign - 1uz))),
-      arena_{std::span<std::byte>{storage_.data(), storage_.size()}}, weight_bytes_{weight_bytes},
+    : mapping_{std::move(mapping)}, mapping_bytes_{mapping_bytes},
       deployment_profile_{std::move(deployment_profile)}
 {
 }
@@ -640,16 +670,18 @@ std::expected<std::shared_ptr<const ModelWeights>, const char*> ModelWeights::op
   } catch (...) {
     return std::unexpected("Out of memory parsing deployment profile");
   }
-  const std::size_t bytes = safetensors_weight_bytes(path);
-  if (bytes == 0uz)
-    return std::unexpected("Failed to load safetensors file or find supported tensors");
-  constexpr std::size_t alignment_padding = kMaxTensors * (kSimdAlign - 1uz);
-  if (bytes > std::numeric_limits<std::size_t>::max() - alignment_padding)
-    return std::unexpected("Checkpoint weight storage size overflows this platform");
+  auto mapped_result = header_json(path);
+  if (!mapped_result)
+    return std::unexpected(mapped_result.error());
+  MappedJson mapped = *mapped_result;
+  const std::byte* const weights_base = mapped.mf.data + 8uz + mapped.json.size();
+  const std::uint64_t data_size = mapped.mf.size - 8uz - mapped.json.size();
   try {
-    std::shared_ptr<ModelWeights> weights{new ModelWeights{bytes, std::move(deployment_profile)}};
+    std::shared_ptr<ModelWeights> weights{
+        new ModelWeights{mapped.mf.owner, mapped.mf.size, std::move(deployment_profile)}};
     const auto loaded =
-        load_safetensors(path, weights->arena_, weights->views_, weights->tensor_count_);
+        load_tensor_views(mapped.json, weights_base, data_size, nullptr, weights->views_,
+                          weights->tensor_count_, weights->weight_bytes_);
     if (!loaded)
       return std::unexpected(loaded.error());
     return std::shared_ptr<const ModelWeights>{std::move(weights)};

@@ -136,4 +136,18 @@ TEST(SafetensorsHardening, InspectionReportsUnsupportedDtypes)
   EXPECT_EQ(unsupported_count, 1uz);
 }
 
+TEST(SafetensorsStorage, KeepsValidatedTensorViewsInOneFileMapping)
+{
+  constexpr std::string_view json =
+      R"({"weight":{"dtype":"F32","shape":[2],"data_offsets":[0,8]}})";
+  const TemporarySafetensors checkpoint{json, 8uz};
+  const auto weights = fe::ModelWeights::open(checkpoint.string());
+  ASSERT_TRUE(weights);
+  EXPECT_EQ((*weights)->mapped_file_bytes(), 8uz + json.size() + 8uz);
+  EXPECT_EQ((*weights)->weight_bytes(), 8uz);
+  ASSERT_EQ((*weights)->tensors().size(), 1uz);
+  EXPECT_EQ((*weights)->tensors().front().bytes, 8uz);
+  EXPECT_NE((*weights)->tensors().front().data, nullptr);
+}
+
 } // namespace
