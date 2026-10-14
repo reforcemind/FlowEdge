@@ -64,11 +64,16 @@ class TorchDiffusionReference:
             .clone()
             .to(self.device)
         )
-        condition = (
-            torch.from_numpy(np.asarray(condition, dtype=np.float32))
-            .reshape(1, -1)
-            .to(self.device)
-        )
+        if torch.is_tensor(condition):
+            condition = condition.to(device=self.device, dtype=torch.float32).reshape(
+                1, -1
+            )
+        else:
+            condition = (
+                torch.from_numpy(np.asarray(condition, dtype=np.float32))
+                .reshape(1, -1)
+                .to(self.device)
+            )
         self.scheduler.set_timesteps(steps)
         for timestep in self.scheduler.timesteps:
             step = timestep.to(sample.device).reshape(1)
