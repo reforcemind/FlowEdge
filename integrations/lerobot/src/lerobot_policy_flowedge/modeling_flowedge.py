@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from lerobot.policies import PreTrainedPolicy
+from lerobot.policies.pretrained import PreTrainedPolicy
 from lerobot.utils.constants import OBS_STATE
 
 from flowedge_lerobot import FlowEdgeDiffusionPolicy

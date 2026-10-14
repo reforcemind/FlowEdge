@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from lerobot.policies import PreTrainedPolicy
+from lerobot.policies.pretrained import PreTrainedPolicy
 
 from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, LeRobotSmolVLACacheProvider
 

@@ -47,7 +47,7 @@ def make_flowedge_pre_post_processors(config, dataset_stats=None):
 def make_flowedge_smolvla_pre_post_processors(config, dataset_stats=None):
     """Use the paired source SmolVLA preprocessing contract for the hybrid."""
 
-    from lerobot.configs import PreTrainedConfig
+    from lerobot.configs.policies import PreTrainedConfig
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
     from lerobot.policies.smolvla.processor_smolvla import (
         make_smolvla_pre_post_processors,
