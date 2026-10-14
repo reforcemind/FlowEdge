@@ -28,7 +28,13 @@ uploads `flow.*` weights and ODE scratch once at load. `sample` /
 copy the action out. `DiffusionHead` uploads `dp.*` weights and U-Net/DDIM
 scratch once. `denoise` / `sample` copy condition and the horizon in, run the
 Conv1D U-Net and DDIM (seeded DDPM) on device, and copy the action or epsilon
-out. No `cudaMalloc` after load. `kernels.h` stays host `std::span` for the
+out. `sample_diffusion_dlpack_into` instead accepts framework-owned CUDA tensors,
+copies condition/noise device-to-device into persistent scratch, and unnormalizes only the
+requested action slice into caller-owned CUDA storage. The LeRobot CUDA plugin uses this path, so
+the RGB/state condition, initial noise, and queued action chunk do not stage through NumPy. Its
+postprocessor still transfers the small selected action to CPU for the robot driver. Seeded DDPM
+retains a host-generated per-step noise copy; DDIM has no host tensor transfer. No `cudaMalloc`
+after load. `kernels.h` stays host `std::span` for the
 generic op surface. Dense DP ops also remain available as host-span launches
 from the same CUDA TU. Short PushT horizons launch with `block.x` matching `L`
 so time-axis stores stay coalesced; `conv_transpose1d` recovers `it` from `ot`,
@@ -50,6 +56,8 @@ cmake --build build-cuda -j
 ./build-cuda/mamba_forward models/mamba_flow.safetensors 1 2 3 4
 ./build-cuda/diffusion_sample models/diffusion_pusht.flowedge.safetensors 10
 ./build-cuda/flowedge_cuda_dp_mix models/diffusion_pusht.flowedge.safetensors
+PYTHONPATH=build-cuda python tools/verification/benchmark_cuda_tensor_boundary.py \
+  models/diffusion_pusht.flowedge.safetensors
 ```
 
 Same checkpoint, same noise: compare those binaries to CPU `flow_sample` /

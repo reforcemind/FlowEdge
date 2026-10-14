@@ -1,6 +1,8 @@
 #include "heads/diffusion/diffusion_cuda.h"
 #include "kernels/cuda/kernels_cuda_api.h"
 
+#include <cuda_runtime.h>
+
 namespace fe {
 namespace {
 
@@ -22,6 +24,7 @@ void CudaDiffusionResident::release() noexcept
   condition_ = x_ = predicted_ = gaussian_ = bump_ = nullptr;
   action_min_ = action_max_ = nullptr;
   bump_cap_ = 0;
+  device_id_ = -1;
 }
 
 bool CudaDiffusionResident::pack_put(Pack& pack, const float* host, std::size_t count,
@@ -136,6 +139,10 @@ bool CudaDiffusionResident::load(const LoadSpec& spec) noexcept
       spec.timestep_dim == 0 || spec.workspace_floats == 0 || spec.action_min == nullptr ||
       spec.action_max == nullptr)
     return false;
+  if (cudaGetDevice(&device_id_) != cudaSuccess) {
+    device_id_ = -1;
+    return false;
+  }
   action_dim_ = spec.action_dim;
   horizon_ = spec.horizon;
   condition_dim_ = spec.condition_dim;
@@ -376,6 +383,14 @@ bool CudaDiffusionResident::begin(std::span<const float> condition,
          cuda_ops::device_copy_h2d(x_, normalized_sample.data(), values_ * sizeof(float));
 }
 
+bool CudaDiffusionResident::begin_device(const float* condition,
+                                         const float* normalized_sample) noexcept
+{
+  return condition != nullptr && normalized_sample != nullptr &&
+         cuda_ops::device_copy_d2d(condition_, condition, condition_dim_ * sizeof(float)) &&
+         cuda_ops::device_copy_d2d(x_, normalized_sample, values_ * sizeof(float));
+}
+
 bool CudaDiffusionResident::denoise_current(float timestep) noexcept
 {
   return denoise_from_x(timestep);
@@ -408,6 +423,17 @@ bool CudaDiffusionResident::copy_x(std::span<float> out) noexcept
   if (out.size() < values_)
     return false;
   return cuda_ops::device_copy_d2h(out.data(), x_, values_ * sizeof(float));
+}
+
+bool CudaDiffusionResident::copy_action_device(float* out, std::size_t action_start,
+                                               std::size_t action_steps) noexcept
+{
+  if (out == nullptr || action_steps == 0 || action_start > horizon_ ||
+      action_steps > horizon_ - action_start)
+    return false;
+  cuda_ops::diffusion_unnormalize_device(x_, action_min_, action_max_, out, action_start,
+                                         action_steps, action_dim_);
+  return cuda_ops::device_synchronize();
 }
 
 } // namespace fe

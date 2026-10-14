@@ -16,6 +16,7 @@ class FakeEngine:
     def __init__(self):
         self.calls = []
         self.into_calls = []
+        self.dlpack_calls = []
 
     def sample_diffusion(self, condition, noise, steps, scheduler, seed):
         self.calls.append((condition, noise, steps, scheduler, seed))
@@ -24,6 +25,13 @@ class FakeEngine:
     def sample_diffusion_into(self, condition, noise, output, steps, scheduler, seed):
         self.into_calls.append((condition, noise, steps, scheduler, seed))
         output[...] = np.arange(12, dtype=np.float32).reshape(6, 2)
+
+    def sample_diffusion_dlpack_into(
+        self, condition, noise, output, steps, scheduler, seed, action_start
+    ):
+        self.dlpack_calls.append(
+            (condition, noise, output, steps, scheduler, seed, action_start)
+        )
 
 
 class LegacyFakeEngine:
@@ -88,3 +96,17 @@ class DiffusionAdapterTests(unittest.TestCase):
                 FlowEdgeDiffusionPolicy(FakeEngine()).predict_action_chunk(
                     condition, noise
                 )
+
+    def test_dlpack_path_writes_only_the_executable_slice(self):
+        engine = FakeEngine()
+        policy = FlowEdgeDiffusionPolicy(engine)
+        condition = np.zeros(4, dtype=np.float32)
+        noise = np.zeros((6, 2), dtype=np.float32)
+        output = np.empty((3, 2), dtype=np.float32)
+
+        returned = policy.predict_action_chunk_dlpack_into(
+            condition, noise, output, steps=7, seed=11
+        )
+
+        self.assertIs(returned, output)
+        self.assertEqual(engine.dlpack_calls[0][3:], (7, "ddim", 11, 1))

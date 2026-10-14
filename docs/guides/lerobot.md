@@ -22,6 +22,8 @@ python -m unittest discover -s integrations/lerobot/tests
 
 The adapter supports Python 3.12+, LeRobot 0.6, and only `cpu` or `cuda`.
 Unavailable CUDA is an error; it is never silently replaced with CPU.
+The CUDA plugin uses DLPack end to end for the encoded condition, diffusion noise, and queued
+action chunk. Only the final action handed to the robot driver crosses back to host memory.
 
 ```python
 from flowedge_lerobot import FlowEdgeDiffusionPolicy

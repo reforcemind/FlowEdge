@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cuda_runtime.h>
+#include <limits>
 
 namespace fe::cuda_ops {
 namespace {
@@ -799,6 +800,20 @@ __global__ void ddim_update_kernel(float* x, const float* eps, int n, float sqrt
   x[i] = (sqrt_alpha_prev * predicted_original) + (sqrt_one_minus_prev * eps[i]);
 }
 
+__global__ void diffusion_unnormalize_kernel(const float* normalized, const float* action_min,
+                                             const float* action_max, float* action,
+                                             int action_start, int values, int action_dim)
+{
+  const int output_index = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (output_index >= values)
+    return;
+  const int channel = output_index % action_dim;
+  const int input_index = (action_start * action_dim) + output_index;
+  action[output_index] =
+      ((normalized[input_index] + 1.0F) * 0.5F * (action_max[channel] - action_min[channel])) +
+      action_min[channel];
+}
+
 __global__ void ddpm_update_kernel(float* x, const float* eps, const float* noise, int n,
                                    float sqrt_alpha_t, float sqrt_beta_t,
                                    float original_coefficient, float sample_coefficient,
@@ -1270,6 +1285,11 @@ bool device_copy_d2d(void* dst, const void* src, std::size_t bytes) noexcept
          cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToDevice) == cudaSuccess;
 }
 
+bool device_synchronize() noexcept
+{
+  return cudaDeviceSynchronize() == cudaSuccess;
+}
+
 void mish_device(float* x, std::size_t n) noexcept
 {
   if (n == 0 || x == nullptr)
@@ -1493,6 +1513,24 @@ void ddpm_update_device(float* x, const float* eps, const float* noise, std::siz
   ddpm_update_kernel<<<grid(static_cast<int>(n)), 256>>>(
       x, eps, noise, static_cast<int>(n), sqrt_alpha_t, sqrt_beta_t, original_coefficient,
       sample_coefficient, sqrt_variance, clip ? 1 : 0, clip_range);
+}
+
+void diffusion_unnormalize_device(const float* normalized, const float* action_min,
+                                  const float* action_max, float* action,
+                                  std::size_t action_start, std::size_t action_steps,
+                                  std::size_t action_dim) noexcept
+{
+  const std::size_t values = action_steps * action_dim;
+  if (normalized == nullptr || action_min == nullptr || action_max == nullptr ||
+      action == nullptr || values == 0 ||
+      values > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      action_start > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      action_dim > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    return;
+  census_hit("unnormalize", static_cast<int>(action_steps), static_cast<int>(action_dim));
+  diffusion_unnormalize_kernel<<<grid(static_cast<int>(values)), 256>>>(
+      normalized, action_min, action_max, action, static_cast<int>(action_start),
+      static_cast<int>(values), static_cast<int>(action_dim));
 }
 
 void rmsnorm_device(const float* in, const float* weight, float* out, std::size_t rows,

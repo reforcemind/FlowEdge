@@ -18,6 +18,7 @@ size_t fe_engine_action_horizon(const fe_engine*);
 size_t fe_engine_condition_dim(const fe_engine*);
 unsigned fe_engine_thread_count(const fe_engine*);
 int      fe_engine_cuda_resident(const fe_engine*);
+int      fe_engine_diffusion_cuda_device(const fe_engine*);
 int fe_engine_model_metadata(const fe_engine*, fe_model_metadata*);
 int fe_engine_deployment_profile(const fe_engine*, fe_deployment_profile*);
 
@@ -33,6 +34,11 @@ int fe_engine_sample_condition(fe_engine*, const float* condition,
 int fe_engine_sample_diffusion(fe_engine*, const float* condition,
                                const float* noise, size_t steps,
                                int scheduler, uint64_t seed, float* action);
+int fe_engine_sample_diffusion_device(fe_engine*, const float* condition_device,
+                                      const float* noise_device, size_t steps,
+                                      int scheduler, uint64_t seed,
+                                      size_t action_start, size_t action_steps,
+                                      float* action_device);
 int fe_engine_diffusion_denoise(fe_engine*, const float* condition,
                                 const float* normalized_sample, float timestep,
                                 float* predicted_noise);
@@ -74,6 +80,9 @@ Rules:
 - `fe_engine_cuda_resident` is 1 only when Mamba, flow, or Diffusion Policy weights
   are device-resident. A CUDA binary still returns 0 after OOM, no GPU, or
   `FLOWEDGE_CUDA_FORCE_HOST=1`; load keeps CPU kernels unless `FLOWEDGE_CUDA_REQUIRED=1`.
+- `fe_engine_sample_diffusion_device` accepts contiguous float32 CUDA pointers on
+  `fe_engine_diffusion_cuda_device`. It keeps condition, initial noise, and the requested compact
+  action slice on device and synchronizes before return. It performs no device allocation.
 - No exception crosses the boundary. Errors return `nullptr` or a non-zero code.
 - `method` is 0 for Euler, 1 for Heun, 2 for RK4.
 - Prefer the named constants `FE_SOLVER_EULER`, `FE_SOLVER_HEUN`, and `FE_SOLVER_RK4` from

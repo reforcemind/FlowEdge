@@ -469,6 +469,51 @@ int EngineRuntime::sample_diffusion(const float* condition, const float* noise, 
   return 0;
 }
 
+int EngineRuntime::sample_diffusion_device(const float* condition, const float* noise,
+                                           std::size_t steps, DiffusionHead::Scheduler scheduler,
+                                           std::uint64_t seed, std::size_t action_start,
+                                           std::size_t action_steps, float* action,
+                                           const char*& error) noexcept
+{
+  if (!diffusion_.valid()) {
+    error = "Model has no Diffusion Policy head to sample from";
+    return 4;
+  }
+#ifndef FLOWEDGE_CUDA
+  static_cast<void>(condition);
+  static_cast<void>(noise);
+  static_cast<void>(steps);
+  static_cast<void>(scheduler);
+  static_cast<void>(seed);
+  static_cast<void>(action_start);
+  static_cast<void>(action_steps);
+  static_cast<void>(action);
+  error = "CUDA tensor sampling requires a CUDA Core build";
+  return 7;
+#else
+  if (!diffusion_.cuda_resident()) {
+    error = "CUDA tensor sampling requires a device-resident Diffusion Policy head";
+    return 7;
+  }
+  if (diffusion_workspace_.empty()) [[unlikely]] {
+    error = "Diffusion sampler workspace is unavailable";
+    return 2;
+  }
+  const DiffusionConfig& config = diffusion_.config();
+  if (steps == 0uz || steps > config.train_timesteps || action_steps == 0uz ||
+      action_start > config.horizon || action_steps > config.horizon - action_start) {
+    error = "Invalid diffusion steps or action slice";
+    return 1;
+  }
+  if (!diffusion_.sample_device(condition, noise, steps, scheduler, seed, diffusion_workspace_,
+                                action, action_start, action_steps)) {
+    error = "CUDA tensor diffusion sampling failed";
+    return 2;
+  }
+  return 0;
+#endif
+}
+
 int EngineRuntime::denoise_diffusion(const float* condition, const float* normalized_sample,
                                      float timestep, float* predicted_noise,
                                      const char*& error) noexcept

@@ -172,6 +172,7 @@ class DiffusionObservationEncoder:
 
     def observe(self, batch, *, normalized=False):
         batch = batch if normalized else self.processor(batch)
+        device = getattr(self, "device", torch.device("cpu"))
         frame = {}
         for name, feature in self.config.input_features.items():
             value = batch.get(name)
@@ -181,7 +182,7 @@ class DiffusionObservationEncoder:
                 )
             if not torch.isfinite(value).all():
                 raise ValueError(f"{name} contains non-finite values")
-            frame[name] = value.detach().cpu().float().clone()
+            frame[name] = value.detach().to(device, dtype=torch.float32).clone()
         if not self.history:
             self.history.extend([frame] * self.config.n_obs_steps)
         else:
@@ -211,6 +212,7 @@ class DiffusionObservationEncoder:
                     [f["observation.environment_state"] for f in self.history], dim=1
                 ).to(device)
             )
-        return np.ascontiguousarray(
-            torch.cat(features, dim=-1).flatten().detach().cpu().numpy()
-        )
+        condition = torch.cat(features, dim=-1).flatten().detach().contiguous()
+        if condition.device.type == "cuda":
+            return condition
+        return np.ascontiguousarray(condition.numpy())
