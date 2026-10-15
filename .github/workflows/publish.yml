@@ -70,10 +70,26 @@ jobs:
           name: cibw-sdist
           path: dist/*.tar.gz
 
+  build_lerobot_plugin:
+    name: Build LeRobot plugin wheel
+    needs: [check-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build pure Python plugin wheel
+        run: pipx run build --wheel integrations/lerobot --outdir plugin-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lerobot-plugin-wheel
+          path: plugin-dist/*.whl
+
   attach-to-release:
-    name: Attach CPU wheels to the GitHub Release
+    name: Attach CPU and LeRobot wheels to the GitHub Release
     if: github.event_name == 'release'
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels, build_sdist, build_lerobot_plugin]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -83,6 +99,10 @@ jobs:
           pattern: cibw-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: lerobot-plugin-wheel
+          path: dist
 
       - name: Upload Release assets
         env:

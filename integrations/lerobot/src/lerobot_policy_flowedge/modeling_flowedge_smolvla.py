@@ -14,6 +14,14 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
     config_class = FlowEdgeSmolVLAConfig
     name = "flowedge_smolvla"
 
+    @classmethod
+    def from_pretrained(cls, pretrained_name_or_path, **kwargs):
+        """Load the native deployment package without dummy Torch weights."""
+
+        from flowedge_lerobot.deployment import load_deployment_policy
+
+        return load_deployment_policy(cls, pretrained_name_or_path, **kwargs)
+
     def __init__(self, config: FlowEdgeSmolVLAConfig, *args, **kwargs):
         expert = kwargs.pop("expert", None)
         cache_provider = kwargs.pop("cache_provider", None)
