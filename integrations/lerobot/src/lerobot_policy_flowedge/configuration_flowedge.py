@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from lerobot.configs import PreTrainedConfig
-from lerobot.optim import AdamWConfig
+from lerobot.configs.policies import PreTrainedConfig
+from lerobot.optim.optimizers import AdamWConfig
 
 
 def _fail_closed_device(config: PreTrainedConfig) -> None:

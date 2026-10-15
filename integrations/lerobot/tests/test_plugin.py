@@ -11,7 +11,7 @@ import numpy as np
 )
 class PluginTests(unittest.TestCase):
     def make_config(self, seed=7, device="cpu"):
-        from lerobot.configs import FeatureType, PolicyFeature
+        from lerobot.configs.types import FeatureType, PolicyFeature
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
 
         return FlowEdgeConfig(
@@ -112,7 +112,7 @@ class PluginTests(unittest.TestCase):
             )
 
     def test_plugin_registers_flowedge_policy(self):
-        from lerobot.configs import PreTrainedConfig
+        from lerobot.configs.policies import PreTrainedConfig
         from lerobot.policies.factory import get_policy_class
         from lerobot.utils.import_utils import register_third_party_plugins
 
@@ -154,7 +154,7 @@ class PluginTests(unittest.TestCase):
         load.assert_called_once_with("fixture", device="cuda:7")
 
     def test_smolvla_processor_uses_source_policy_contract(self):
-        from lerobot.configs import FeatureType, PolicyFeature
+        from lerobot.configs.types import FeatureType, PolicyFeature
         from lerobot.policies.factory import make_pre_post_processors
         from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
         from lerobot.utils.import_utils import register_third_party_plugins
@@ -175,7 +175,7 @@ class PluginTests(unittest.TestCase):
         source = SmolVLAConfig(device="cpu")
         expected = (object(), object())
         with patch(
-            "lerobot.configs.PreTrainedConfig.from_pretrained",
+            "lerobot.configs.policies.PreTrainedConfig.from_pretrained",
             return_value=source,
         ):
             with patch(
@@ -188,7 +188,7 @@ class PluginTests(unittest.TestCase):
 
     def test_smolvla_plugin_consumes_cached_chunks(self):
         import torch
-        from lerobot.configs import FeatureType, PolicyFeature
+        from lerobot.configs.types import FeatureType, PolicyFeature
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeSmolVLAConfig
         from lerobot_policy_flowedge.modeling_flowedge_smolvla import FlowEdgeSmolVLAPolicy
         from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, SmolVLAKVCache

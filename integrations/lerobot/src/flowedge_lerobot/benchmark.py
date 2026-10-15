@@ -77,6 +77,20 @@ def time_policy_loop(
 ):
     chunks = []
     total = warmup + iterations
+    use_cuda_tensors = device == "cuda" and bool(
+        getattr(policy, "supports_cuda_tensors", False)
+    )
+    device_noise = None
+    device_output = None
+    if use_cuda_tensors:
+        device_noise = torch.as_tensor(
+            noise, dtype=torch.float32, device=device
+        ).contiguous()
+        device_output = torch.empty(
+            (policy.action_steps, policy.action_dim),
+            dtype=torch.float32,
+            device=device,
+        )
     for iteration in range(total):
         begin = perf_counter_ns()
         encoder.reset()
@@ -85,9 +99,17 @@ def time_policy_loop(
         condition = encoder.condition()
         synchronize(device)
         encoded = perf_counter_ns()
-        chunk = policy.predict_action_chunk(condition, noise, steps=steps)
+        if use_cuda_tensors:
+            policy.predict_action_chunk_dlpack_into(
+                condition.contiguous(), device_noise, device_output, steps=steps
+            )
+            chunk = device_output
+        else:
+            chunk = policy.predict_action_chunk(condition, noise, steps=steps)
         synchronize(device)
         end = perf_counter_ns()
+        if torch.is_tensor(chunk):
+            chunk = chunk.detach().cpu().numpy()
         chunks.append(np.array(chunk, copy=True))
         if iteration >= warmup:
             samples[name]["encoder_ms"].append((encoded - begin) / 1e6)
