@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "scope": "matched gym_pusht/PushT-v0 simulation; IPC excluded from latency",
+  "seed": 7,
+  "steps": 10,
+  "max_steps": 300,
+  "results": [
+    {
+      "precision": "exact-f32",
+      "episodes": [
+        {
+          "seed": 7,
+          "success": true,
+          "steps": 174,
+          "max_reward": 1.0,
+          "elapsed_s": 3.5775995000149123
+        },
+        {
+          "seed": 8,
+          "success": true,
+          "steps": 168,
+          "max_reward": 1.0,
+          "elapsed_s": 3.2983734000008553
+        },
+        {
+          "seed": 9,
+          "success": true,
+          "steps": 208,
+          "max_reward": 1.0,
+          "elapsed_s": 4.138705499994103
+        },
+        {
+          "seed": 10,
+          "success": true,
+          "steps": 184,
+          "max_reward": 1.0,
+          "elapsed_s": 3.6324274000362493
+        },
+        {
+          "seed": 11,
+          "success": true,
+          "steps": 166,
+          "max_reward": 1.0,
+          "elapsed_s": 3.2077213000156917
+        },
+        {
+          "seed": 12,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9816936275135588,
+          "elapsed_s": 5.957078500010539
+        },
+        {
+          "seed": 13,
+          "success": true,
+          "steps": 150,
+          "max_reward": 1.0,
+          "elapsed_s": 2.9198401999892667
+        },
+        {
+          "seed": 14,
+          "success": true,
+          "steps": 126,
+          "max_reward": 1.0,
+          "elapsed_s": 2.4806838000076823
+        },
+        {
+          "seed": 15,
+          "success": true,
+          "steps": 186,
+          "max_reward": 1.0,
+          "elapsed_s": 3.729560900013894
+        },
+        {
+          "seed": 16,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9996903944318146,
+          "elapsed_s": 6.038309299969114
+        }
+      ],
+      "success_rate": 0.8,
+      "mean_max_reward": 0.9981384021945374
+    },
+    {
+      "precision": "approx-fp16-deep",
+      "episodes": [
+        {
+          "seed": 7,
+          "success": true,
+          "steps": 174,
+          "max_reward": 1.0,
+          "elapsed_s": 3.2924294999684207
+        },
+        {
+          "seed": 8,
+          "success": true,
+          "steps": 168,
+          "max_reward": 1.0,
+          "elapsed_s": 2.835423599986825
+        },
+        {
+          "seed": 9,
+          "success": true,
+          "steps": 201,
+          "max_reward": 1.0,
+          "elapsed_s": 3.367716900014784
+        },
+        {
+          "seed": 10,
+          "success": true,
+          "steps": 184,
+          "max_reward": 1.0,
+          "elapsed_s": 3.022222800005693
+        },
+        {
+          "seed": 11,
+          "success": true,
+          "steps": 166,
+          "max_reward": 1.0,
+          "elapsed_s": 2.729379100026563
+        },
+        {
+          "seed": 12,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9741816188103499,
+          "elapsed_s": 5.094954800035339
+        },
+        {
+          "seed": 13,
+          "success": true,
+          "steps": 150,
+          "max_reward": 1.0,
+          "elapsed_s": 2.562515900004655
+        },
+        {
+          "seed": 14,
+          "success": true,
+          "steps": 126,
+          "max_reward": 1.0,
+          "elapsed_s": 2.182252599974163
+        },
+        {
+          "seed": 15,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9973102489213295,
+          "elapsed_s": 5.311064500012435
+        },
+        {
+          "seed": 16,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9997065822041555,
+          "elapsed_s": 5.204768099996727
+        }
+      ],
+      "success_rate": 0.7,
+      "mean_max_reward": 0.9971198449935834
+    }
+  ],
+  "limitations": [
+    "Simulation only; no SO-101 hardware validation.",
+    "The image encoder runs on Windows CPU and the native denoiser in WSL CUDA."
+  ]
+}

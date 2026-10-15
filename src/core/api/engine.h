@@ -26,6 +26,12 @@ enum
   FE_DIFFUSION_DDPM = 1,
 };
 
+enum
+{
+  FE_DIFFUSION_PRECISION_EXACT_F32 = 0,
+  FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP = 1,
+};
+
 typedef struct fe_diffusion_metadata
 {
   uint32_t struct_size;
@@ -80,6 +86,20 @@ fe_engine* fe_engine_load(const char* path);
  * the CUDA upload and keeps CPU kernels (tests / 4 GB cards).
  */
 fe_engine* fe_engine_load_with_threads(const char* path, unsigned worker_threads);
+
+/**
+ * Load with an explicit Diffusion Policy CUDA precision mode.
+ *
+ * APPROX_FP16_DEEP is opt-in, requires a CUDA-resident diffusion head, and
+ * stores eligible deepest U-Net convolution weights as FP16 while accumulating
+ * and returning FP32 values. Existing load functions always select EXACT_F32.
+ */
+fe_engine* fe_engine_load_with_threads_and_diffusion_precision(const char* path,
+                                                               unsigned worker_threads,
+                                                               int precision);
+
+/** Load with automatic thread selection and an explicit diffusion precision. */
+fe_engine* fe_engine_load_with_diffusion_precision(const char* path, int precision);
 
 /** Load one immutable checkpoint store that can be shared by multiple engines. */
 fe_weights* fe_weights_load(const char* path);
@@ -228,6 +248,9 @@ int fe_engine_cuda_resident(const fe_engine* engine);
 
 /** CUDA device owning the resident Diffusion Policy head, or -1 when unavailable. */
 int fe_engine_diffusion_cuda_device(const fe_engine* engine);
+
+/** Exact or approximate precision selected for the diffusion runtime. */
+int fe_engine_diffusion_precision(const fe_engine* engine);
 
 /** Fill versioned architecture, precision, dimension, and model-digest metadata. */
 int fe_engine_model_metadata(const fe_engine* engine, fe_model_metadata* metadata);

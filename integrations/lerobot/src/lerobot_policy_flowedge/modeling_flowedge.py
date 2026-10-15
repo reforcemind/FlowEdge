@@ -23,7 +23,9 @@ class FlowEdgePolicy(PreTrainedPolicy):
         device = config_device(config)
         self._device = torch.device(device)
         self._policy = FlowEdgeDiffusionPolicy.from_checkpoint(
-            config.checkpoint_path, device=device
+            config.checkpoint_path,
+            device=device,
+            precision=config.diffusion_precision,
         )
         if config.action_steps is None:
             config.action_steps = self._policy.action_steps

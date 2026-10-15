@@ -85,12 +85,17 @@ not task quality. Small sample counts do not establish stable tail-latency estim
 ```bash
 python -m flowedge_lerobot.evaluate models/diffusion_pusht.flowedge.safetensors \
   --source models/diffusion_pusht --backend flowedge --episodes 5 --max-steps 300 \
-  --steps 10 --threads 1 --output bench-results/pusht-flowedge.json
+  --steps 10 --threads 1 --device cpu --precision exact-f32 \
+  --output bench-results/pusht-flowedge.json
 ```
 
 Repeat with `--backend lerobot` and identical seeds/settings. Reports include seeds,
 reward, success, steps, and hashes. This mode advances simulated time after an action
 becomes available; wall-clock latency does not penalize its score.
+
+For a CUDA source build, use `--device cuda`. `--precision approx-fp16-deep` is an explicit,
+fail-closed approximate policy mode; compare it against `exact-f32` with identical seeds. Do not
+promote a latency result unless task success is unchanged on the declared evaluation set.
 
 Add `--period-ms 100` for periodic asynchronous delivery. Startup bootstraps the first
 chunk before timing; later chunks discard actions whose observation-relative ticks have

@@ -1,13 +1,36 @@
 #include "heads/diffusion/diffusion_cuda.h"
 #include "kernels/cuda/kernels_cuda_api.h"
 
+#include <algorithm>
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <memory>
 
 namespace fe {
 namespace {
 
 constexpr std::size_t kFinalNormGroups = 8;
 constexpr float kGroupNormEps = 1.0e-5F;
+
+struct CudaHostHalfDeleter {
+  void operator()(__half* ptr) const noexcept
+  {
+    if (ptr != nullptr)
+      (void)cudaFreeHost(ptr);
+  }
+};
+
+bool can_use_half_weight(const CudaDiffusionResident::LoadSpec& spec,
+                         const CudaDiffusionResident::ConvHost& conv) noexcept
+{
+  if (spec.precision != DiffusionPrecision::ApproxFp16Deep)
+    return false;
+  std::size_t deepest_length = spec.horizon;
+  for (std::size_t stage = 1; stage < spec.stages; ++stage)
+    deepest_length /= 2;
+  return deepest_length == 4 && conv.in_channels == 2048 && conv.out_channels == 2048 &&
+         conv.kernel == 5 && !conv.k_major && conv.approximate_candidate;
+}
 
 } // namespace
 
@@ -19,8 +42,10 @@ std::size_t CudaDiffusionResident::align16(std::size_t n) noexcept
 void CudaDiffusionResident::release() noexcept
 {
   cuda_ops::device_free(weights_);
+  cuda_ops::device_free(half_weights_);
   cuda_ops::device_free(scratch_);
   weights_ = scratch_ = nullptr;
+  half_weights_ = nullptr;
   condition_ = x_ = predicted_ = gaussian_ = bump_ = nullptr;
   action_min_ = action_max_ = nullptr;
   bump_cap_ = 0;
@@ -38,19 +63,44 @@ bool CudaDiffusionResident::pack_put(Pack& pack, const float* host, std::size_t 
   return cuda_ops::device_copy_h2d(dst, host, count * sizeof(float));
 }
 
-bool CudaDiffusionResident::upload_conv(Pack& pack, const ConvHost& src, Conv& dst) noexcept
+bool CudaDiffusionResident::upload_conv(Pack& pack, HalfPack& half_pack, const LoadSpec& spec,
+                                        const ConvHost& src, Conv& dst) noexcept
 {
   dst.in_channels = src.in_channels;
   dst.out_channels = src.out_channels;
   dst.kernel = src.kernel;
   dst.k_major = src.k_major;
   dst.weight = nullptr;
+  dst.half_weight = nullptr;
   dst.bias = nullptr;
   if (src.weight == nullptr)
     return src.bias == nullptr;
   const std::size_t weight_n = src.out_channels * src.in_channels * src.kernel;
-  return pack_put(pack, src.weight, weight_n, dst.weight) &&
-         pack_put(pack, src.bias, src.out_channels, dst.bias);
+  if (can_use_half_weight(spec, src)) {
+    half_pack.used = align16(half_pack.used);
+    if (half_pack.base == nullptr || half_pack.used + weight_n > half_pack.cap)
+      return false;
+    dst.half_weight = half_pack.base + half_pack.used;
+    half_pack.used += weight_n;
+    constexpr std::size_t kConversionChunk = std::size_t{1} << 20u;
+    const std::size_t capacity = std::min(weight_n, kConversionChunk);
+    __half* host_half = nullptr;
+    if (cudaMallocHost(reinterpret_cast<void**>(&host_half), capacity * sizeof(__half)) !=
+        cudaSuccess)
+      return false;
+    std::unique_ptr<__half, CudaHostHalfDeleter> converted{host_half};
+    auto* const device_half = static_cast<__half*>(dst.half_weight);
+    for (std::size_t offset = 0; offset < weight_n; offset += capacity) {
+      const std::size_t count = std::min(capacity, weight_n - offset);
+      for (std::size_t index = 0; index < count; ++index)
+        converted.get()[index] = __float2half(src.weight[offset + index]);
+      if (!cuda_ops::device_copy_h2d(device_half + offset, converted.get(), count * sizeof(__half)))
+        return false;
+    }
+  } else if (!pack_put(pack, src.weight, weight_n, dst.weight)) {
+    return false;
+  }
+  return pack_put(pack, src.bias, src.out_channels, dst.bias);
 }
 
 bool CudaDiffusionResident::upload_norm(Pack& pack, const NormHost& src, Norm& dst) noexcept
@@ -69,15 +119,16 @@ bool CudaDiffusionResident::upload_linear(Pack& pack, const LinearHost& src, Lin
          pack_put(pack, src.bias, src.out_features, dst.bias);
 }
 
-bool CudaDiffusionResident::upload_residual(Pack& pack, const ResidualHost& src,
-                                            Residual& dst) noexcept
+bool CudaDiffusionResident::upload_residual(Pack& pack, HalfPack& half_pack, const LoadSpec& spec,
+                                            const ResidualHost& src, Residual& dst) noexcept
 {
   dst.identity_residual = src.identity_residual;
-  if (!upload_conv(pack, src.conv1, dst.conv1) || !upload_norm(pack, src.norm1, dst.norm1) ||
-      !upload_linear(pack, src.film, dst.film) || !upload_conv(pack, src.conv2, dst.conv2) ||
+  if (!upload_conv(pack, half_pack, spec, src.conv1, dst.conv1) ||
+      !upload_norm(pack, src.norm1, dst.norm1) || !upload_linear(pack, src.film, dst.film) ||
+      !upload_conv(pack, half_pack, spec, src.conv2, dst.conv2) ||
       !upload_norm(pack, src.norm2, dst.norm2))
     return false;
-  return dst.identity_residual || upload_conv(pack, src.residual, dst.residual);
+  return dst.identity_residual || upload_conv(pack, half_pack, spec, src.residual, dst.residual);
 }
 
 std::size_t CudaDiffusionResident::weight_floats(const LoadSpec& spec) noexcept
@@ -90,7 +141,8 @@ std::size_t CudaDiffusionResident::weight_floats(const LoadSpec& spec) noexcept
   const auto add_conv = [&](const ConvHost& conv, bool used) noexcept {
     if (!used || conv.weight == nullptr)
       return;
-    add(conv.out_channels * conv.in_channels * conv.kernel);
+    if (!can_use_half_weight(spec, conv))
+      add(conv.out_channels * conv.in_channels * conv.kernel);
     add(conv.out_channels);
   };
   const auto add_norm = [&](const NormHost& norm) noexcept {
@@ -131,6 +183,37 @@ std::size_t CudaDiffusionResident::weight_floats(const LoadSpec& spec) noexcept
   return n;
 }
 
+std::size_t CudaDiffusionResident::half_weight_values(const LoadSpec& spec) noexcept
+{
+  std::size_t n = 0;
+  const auto add_conv = [&](const ConvHost& conv, bool used) noexcept {
+    if (!used || conv.weight == nullptr || !can_use_half_weight(spec, conv))
+      return;
+    n = align16(n);
+    n += conv.out_channels * conv.in_channels * conv.kernel;
+  };
+  const auto add_residual = [&](const ResidualHost& residual) noexcept {
+    add_conv(residual.conv1, true);
+    add_conv(residual.conv2, true);
+    add_conv(residual.residual, !residual.identity_residual);
+  };
+  for (std::size_t stage = 0; stage < spec.stages; ++stage) {
+    add_residual(spec.down[stage].residuals[0]);
+    add_residual(spec.down[stage].residuals[1]);
+    add_conv(spec.down[stage].downsample, !spec.down[stage].identity_downsample);
+  }
+  add_residual(spec.middle[0]);
+  add_residual(spec.middle[1]);
+  for (std::size_t stage = 0; stage + 1 < spec.stages; ++stage) {
+    add_residual(spec.up[stage].residuals[0]);
+    add_residual(spec.up[stage].residuals[1]);
+    add_conv(spec.up[stage].upsample, true);
+  }
+  add_conv(spec.final_conv, true);
+  add_conv(spec.output_conv, true);
+  return n;
+}
+
 bool CudaDiffusionResident::load(const LoadSpec& spec) noexcept
 {
   release();
@@ -153,26 +236,35 @@ bool CudaDiffusionResident::load(const LoadSpec& spec) noexcept
   dims_ = spec.dims;
 
   const std::size_t packed = weight_floats(spec);
+  const std::size_t half_values = half_weight_values(spec);
   weights_ = static_cast<float*>(cuda_ops::device_alloc(packed * sizeof(float)));
+  half_weights_ =
+      static_cast<std::uint16_t*>(cuda_ops::device_alloc(half_values * sizeof(std::uint16_t)));
   Pack pack{weights_, packed, 0};
+  HalfPack half_pack{half_weights_, half_values, 0};
   bool ok = weights_ != nullptr && upload_linear(pack, spec.timestep_in, timestep_in_) &&
-            upload_linear(pack, spec.timestep_out, timestep_out_);
+            upload_linear(pack, spec.timestep_out, timestep_out_) &&
+            (half_values == 0 || half_weights_ != nullptr);
   for (std::size_t stage = 0; ok && stage < spec.stages; ++stage) {
-    ok = upload_residual(pack, spec.down[stage].residuals[0], down_[stage].residuals[0]) &&
-         upload_residual(pack, spec.down[stage].residuals[1], down_[stage].residuals[1]);
+    ok = upload_residual(pack, half_pack, spec, spec.down[stage].residuals[0],
+                         down_[stage].residuals[0]) &&
+         upload_residual(pack, half_pack, spec, spec.down[stage].residuals[1],
+                         down_[stage].residuals[1]);
     down_[stage].identity_downsample = spec.down[stage].identity_downsample;
     if (ok && !down_[stage].identity_downsample)
-      ok = upload_conv(pack, spec.down[stage].downsample, down_[stage].downsample);
+      ok = upload_conv(pack, half_pack, spec, spec.down[stage].downsample, down_[stage].downsample);
   }
-  ok = ok && upload_residual(pack, spec.middle[0], middle_[0]) &&
-       upload_residual(pack, spec.middle[1], middle_[1]);
+  ok = ok && upload_residual(pack, half_pack, spec, spec.middle[0], middle_[0]) &&
+       upload_residual(pack, half_pack, spec, spec.middle[1], middle_[1]);
   for (std::size_t stage = 0; ok && stage + 1 < spec.stages; ++stage)
-    ok = upload_residual(pack, spec.up[stage].residuals[0], up_[stage].residuals[0]) &&
-         upload_residual(pack, spec.up[stage].residuals[1], up_[stage].residuals[1]) &&
-         upload_conv(pack, spec.up[stage].upsample, up_[stage].upsample);
-  ok = ok && upload_conv(pack, spec.final_conv, final_conv_) &&
+    ok = upload_residual(pack, half_pack, spec, spec.up[stage].residuals[0],
+                         up_[stage].residuals[0]) &&
+         upload_residual(pack, half_pack, spec, spec.up[stage].residuals[1],
+                         up_[stage].residuals[1]) &&
+         upload_conv(pack, half_pack, spec, spec.up[stage].upsample, up_[stage].upsample);
+  ok = ok && upload_conv(pack, half_pack, spec, spec.final_conv, final_conv_) &&
        upload_norm(pack, spec.final_norm, final_norm_) &&
-       upload_conv(pack, spec.output_conv, output_conv_) &&
+       upload_conv(pack, half_pack, spec, spec.output_conv, output_conv_) &&
        pack_put(pack, spec.action_min, spec.action_dim, action_min_) &&
        pack_put(pack, spec.action_max, spec.action_dim, action_max_);
 
@@ -229,17 +321,30 @@ bool CudaDiffusionResident::residual_forward(float* input, std::size_t length,
   if (first == nullptr || modulation == nullptr || input == nullptr || output == nullptr ||
       condition_mish == nullptr)
     return false;
-  cuda_ops::conv1d_device(input, weights.conv1.weight, weights.conv1.bias, first, in_channels,
-                          out_channels, length, length, weights.conv1.kernel, 1,
-                          weights.conv1.kernel / 2);
-  cuda_ops::matmul_f32_device(condition_mish, weights.film.weight, modulation, 1,
-                              weights.film.in_features, weights.film.out_features);
-  cuda_ops::add_bias_device(modulation, weights.film.bias, weights.film.out_features);
+  if (weights.conv1.half_weight != nullptr) {
+    if (length != 4)
+      return false;
+    cuda_ops::conv1d_f16_k5_l4_device(input, weights.conv1.half_weight, weights.conv1.bias, first,
+                                      in_channels, out_channels);
+  } else {
+    cuda_ops::conv1d_device(input, weights.conv1.weight, weights.conv1.bias, first, in_channels,
+                            out_channels, length, length, weights.conv1.kernel, 1,
+                            weights.conv1.kernel / 2);
+  }
+  cuda_ops::linear_f32_device(condition_mish, weights.film.weight, weights.film.bias, modulation,
+                              weights.film.in_features, weights.film.out_features, false);
   cuda_ops::group_norm_mish_device(first, weights.norm1.weight, weights.norm1.bias, out_channels,
                                    length, groups_, kGroupNormEps, modulation);
-  cuda_ops::conv1d_device(first, weights.conv2.weight, weights.conv2.bias, output, out_channels,
-                          out_channels, length, length, weights.conv2.kernel, 1,
-                          weights.conv2.kernel / 2);
+  if (weights.conv2.half_weight != nullptr) {
+    if (length != 4)
+      return false;
+    cuda_ops::conv1d_f16_k5_l4_device(first, weights.conv2.half_weight, weights.conv2.bias, output,
+                                      out_channels, out_channels);
+  } else {
+    cuda_ops::conv1d_device(first, weights.conv2.weight, weights.conv2.bias, output, out_channels,
+                            out_channels, length, length, weights.conv2.kernel, 1,
+                            weights.conv2.kernel / 2);
+  }
   const float* residual = input;
   if (!weights.identity_residual) {
     cuda_ops::conv1d_device(input, weights.residual.weight, weights.residual.bias, first,
@@ -264,13 +369,10 @@ bool CudaDiffusionResident::denoise_from_x(float timestep) noexcept
   if (raw_time == nullptr || hidden_time == nullptr || condition_mish == nullptr || x == nullptr)
     return false;
   cuda_ops::diffusion_timestep_device(timestep, raw_time, timestep_dim_);
-  cuda_ops::matmul_f32_device(raw_time, timestep_in_.weight, hidden_time, 1, timestep_dim_,
-                              timestep_hidden);
-  cuda_ops::add_bias_device(hidden_time, timestep_in_.bias, timestep_hidden);
-  cuda_ops::mish_device(hidden_time, timestep_hidden);
-  cuda_ops::matmul_f32_device(hidden_time, timestep_out_.weight, raw_time, 1, timestep_hidden,
-                              timestep_dim_);
-  cuda_ops::add_bias_device(raw_time, timestep_out_.bias, timestep_dim_);
+  cuda_ops::linear_f32_device(raw_time, timestep_in_.weight, timestep_in_.bias, hidden_time,
+                              timestep_dim_, timestep_hidden, true);
+  cuda_ops::linear_f32_device(hidden_time, timestep_out_.weight, timestep_out_.bias, raw_time,
+                              timestep_hidden, timestep_dim_, false);
   if (!cuda_ops::device_copy_d2d(condition_mish, raw_time, timestep_dim_ * sizeof(float)) ||
       !cuda_ops::device_copy_d2d(condition_mish + timestep_dim_, condition_,
                                  condition_dim_ * sizeof(float)))

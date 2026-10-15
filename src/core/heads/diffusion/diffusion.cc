@@ -380,7 +380,9 @@ std::size_t DiffusionHead::required_workspace_floats(std::span<const TensorView>
              : 0uz;
 }
 
-DiffusionHead::DiffusionHead(std::span<const TensorView> weights, Arena& persistent) noexcept
+DiffusionHead::DiffusionHead(std::span<const TensorView> weights, Arena& persistent,
+                             DiffusionPrecision precision) noexcept
+    : precision_{precision}
 {
   const TensorView* const meta_tensor = find_tensor(weights, "dp.meta");
   const TensorView* const dims_tensor = find_tensor(weights, "dp.dims");
@@ -590,6 +592,7 @@ DiffusionHead::DiffusionHead(std::span<const TensorView> weights, Arena& persist
                                                .identity_residual = src.identity_residual};
   };
   CudaDiffusionResident::LoadSpec spec{};
+  spec.precision = precision_;
   spec.action_dim = cfg_.action_dim;
   spec.horizon = cfg_.horizon;
   spec.condition_dim = cfg_.condition_dim;
@@ -624,6 +627,16 @@ DiffusionHead::DiffusionHead(std::span<const TensorView> weights, Arena& persist
   spec.final_conv = conv(final_conv_);
   spec.final_norm = norm(final_norm_, dims_[0]);
   spec.output_conv = conv(output_conv_);
+  // The calibrated approximate profile keeps the last deepest residual output
+  // in FP32, then converts two deepest down convolutions and the four bottleneck
+  // convolutions. This six-layer set clears the end-to-end 15% latency gate
+  // without changing matched PushT success on the measured seeds.
+  spec.down[cfg_.stages - 1uz].residuals[0].conv2.approximate_candidate = true;
+  spec.down[cfg_.stages - 1uz].residuals[1].conv1.approximate_candidate = true;
+  spec.middle[0].conv1.approximate_candidate = true;
+  spec.middle[0].conv2.approximate_candidate = true;
+  spec.middle[1].conv1.approximate_candidate = true;
+  spec.middle[1].conv2.approximate_candidate = true;
   spec.action_min = action_min_;
   spec.action_max = action_max_;
   if (!linears_ok || !cuda_->load(spec)) {

@@ -42,6 +42,9 @@ public:
   [[nodiscard]] static unsigned recommended_thread_count() noexcept;
 
   EngineRuntime(std::shared_ptr<const ModelWeights> weights, std::size_t slab_bytes,
+                unsigned worker_threads, DiffusionPrecision diffusion_precision,
+                const char*& error);
+  EngineRuntime(std::shared_ptr<const ModelWeights> weights, std::size_t slab_bytes,
                 unsigned worker_threads, const char*& error);
   ~EngineRuntime();
 
@@ -88,6 +91,10 @@ public:
   [[nodiscard]] const DiffusionConfig* diffusion_config() const noexcept
   {
     return diffusion_.valid() ? &diffusion_.config() : nullptr;
+  }
+  [[nodiscard]] DiffusionPrecision diffusion_precision() const noexcept
+  {
+    return diffusion_.precision();
   }
   [[nodiscard]] std::size_t decode_state_bytes() const noexcept;
 

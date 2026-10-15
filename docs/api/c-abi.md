@@ -5,6 +5,9 @@ The only public surface. C linkage, opaque handle.
 ```c
 fe_engine* fe_engine_load(const char* path);
 fe_engine* fe_engine_load_with_threads(const char* path, unsigned worker_threads);
+fe_engine* fe_engine_load_with_threads_and_diffusion_precision(
+    const char* path, unsigned worker_threads, int precision);
+fe_engine* fe_engine_load_with_diffusion_precision(const char* path, int precision);
 fe_weights* fe_weights_load(const char* path);
 size_t      fe_weights_size_bytes(const fe_weights*);
 void        fe_weights_free(fe_weights*);
@@ -19,6 +22,7 @@ size_t fe_engine_condition_dim(const fe_engine*);
 unsigned fe_engine_thread_count(const fe_engine*);
 int      fe_engine_cuda_resident(const fe_engine*);
 int      fe_engine_diffusion_cuda_device(const fe_engine*);
+int      fe_engine_diffusion_precision(const fe_engine*);
 int fe_engine_model_metadata(const fe_engine*, fe_model_metadata*);
 int fe_engine_deployment_profile(const fe_engine*, fe_deployment_profile*);
 
@@ -77,6 +81,10 @@ Rules:
 - `fe_engine_load` reads `FLOWEDGE_THREADS=0..8` when present and otherwise uses a
   bandwidth-aware automatic default. `fe_engine_load_with_threads` bypasses the environment;
   zero selects caller-thread-only execution.
+- Existing load functions select `FE_DIFFUSION_PRECISION_EXACT_F32`. The explicit precision
+  loaders also accept `FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP`; that mode fails unless a
+  CUDA-resident diffusion head attaches. It stores a calibrated subset of deep convolution
+  weights in FP16 while retaining FP32 accumulation and output.
 - `fe_engine_cuda_resident` is 1 only when Mamba, flow, or Diffusion Policy weights
   are device-resident. A CUDA binary still returns 0 after OOM, no GPU, or
   `FLOWEDGE_CUDA_FORCE_HOST=1`; load keeps CPU kernels unless `FLOWEDGE_CUDA_REQUIRED=1`.

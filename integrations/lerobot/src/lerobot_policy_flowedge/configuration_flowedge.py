@@ -31,9 +31,16 @@ class FlowEdgeConfig(PreTrainedConfig):
     seed: int = 0
     inference_steps: int = 10
     scheduler: str = "ddim"
+    diffusion_precision: str = "exact-f32"
 
     def __post_init__(self) -> None:
         _fail_closed_device(self)
+        if self.diffusion_precision not in {"exact-f32", "approx-fp16-deep"}:
+            raise ValueError("unsupported FlowEdge diffusion precision")
+        if self.diffusion_precision == "approx-fp16-deep" and not str(
+            self.device
+        ).startswith("cuda"):
+            raise ValueError("approx-fp16-deep precision requires device=cuda")
 
     def get_optimizer_preset(self) -> AdamWConfig:
         raise RuntimeError(
@@ -110,7 +117,9 @@ class FlowEdgeSmolVLAConfig(PreTrainedConfig):
                 "FlowEdge SmolVLA requires observation.state input and action output features"
             )
         if not self.checkpoint_path:
-            raise ValueError("checkpoint_path must name a native SmolVLA expert checkpoint")
+            raise ValueError(
+                "checkpoint_path must name a native SmolVLA expert checkpoint"
+            )
         if not self.source_checkpoint_path:
             raise ValueError(
                 "source_checkpoint_path must name the LeRobot SmolVLA directory that owns the VLM"

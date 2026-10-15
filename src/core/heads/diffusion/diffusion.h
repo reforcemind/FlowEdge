@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arena/arena.h"
+#include "heads/diffusion/diffusion_precision.h"
 #include "loader/safetensors.h"
 
 #include <array>
@@ -46,7 +47,8 @@ public:
     kDDPM = 1,
   };
 
-  DiffusionHead(std::span<const TensorView> weights, Arena& persistent) noexcept;
+  DiffusionHead(std::span<const TensorView> weights, Arena& persistent,
+                DiffusionPrecision precision = DiffusionPrecision::ExactF32) noexcept;
   ~DiffusionHead();
   DiffusionHead(const DiffusionHead&) = delete;
   DiffusionHead(DiffusionHead&&) = delete;
@@ -63,6 +65,7 @@ public:
 #endif
   }
   [[nodiscard]] const DiffusionConfig& config() const noexcept { return cfg_; }
+  [[nodiscard]] DiffusionPrecision precision() const noexcept { return precision_; }
   [[nodiscard]] std::size_t sample_values() const noexcept
   {
     return cfg_.horizon * cfg_.action_dim;
@@ -164,6 +167,7 @@ private:
                                         Arena& arena, std::span<float> predicted_noise) noexcept;
 
   DiffusionConfig cfg_{};
+  DiffusionPrecision precision_{DiffusionPrecision::ExactF32};
   std::array<std::size_t, kMaxStages> dims_{};
   LinearWeights timestep_in_{};
   LinearWeights timestep_out_{};

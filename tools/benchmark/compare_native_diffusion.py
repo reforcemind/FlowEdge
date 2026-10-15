@@ -23,6 +23,9 @@ def main():
     parser.add_argument("checkpoint", type=Path)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--candidate", type=Path)
+    parser.add_argument("--baseline-precision", default="exact-f32")
+    parser.add_argument("--candidate-precision", default="exact-f32")
+    parser.add_argument("--precision", default="exact-f32", help=argparse.SUPPRESS)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--steps", type=int, nargs="+", default=[10])
@@ -30,6 +33,8 @@ def main():
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--atol", type=float, default=1e-3)
+    parser.add_argument("--rtol", type=float, default=1e-4)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--module-dir", type=Path, help=argparse.SUPPRESS)
@@ -47,7 +52,11 @@ def main():
             or Path(flowedge.__file__).resolve().parent != args.module_dir.resolve()
         ):
             raise RuntimeError("imported module does not come from the requested build")
-        engine = flowedge.Engine(str(args.checkpoint), threads=args.threads)
+        engine = flowedge.Engine(
+            str(args.checkpoint),
+            threads=args.threads,
+            diffusion_precision=args.precision,
+        )
         if bool(engine.cuda_resident) != (args.device == "cuda"):
             raise RuntimeError("engine residency does not match requested device")
         rng = np.random.default_rng(args.seed)
@@ -61,6 +70,7 @@ def main():
             "compiler": flowedge.compiler,
             "build_type": flowedge.build_type,
             "seed": args.seed,
+            "precision": engine.diffusion_precision,
             "rows": [],
         }
         if flowedge.build_type != "Release":
@@ -110,6 +120,8 @@ def main():
                 args.device,
                 "--threads",
                 str(args.threads),
+                "--precision",
+                getattr(args, f"{label}_precision"),
                 "--steps",
                 *map(str, args.steps),
                 "--iterations",
@@ -118,6 +130,10 @@ def main():
                 str(args.warmup),
                 "--seed",
                 str(args.seed + trial),
+                "--atol",
+                str(args.atol),
+                "--rtol",
+                str(args.rtol),
                 "--output",
                 str(output.resolve()),
             ]
@@ -129,11 +145,25 @@ def main():
                 [(r["steps"], r["p50_ms"]) for r in pair[label]["rows"]],
                 flush=True,
             )
+        pair["parity"] = []
         for baseline, candidate in zip(
             pair["baseline"]["rows"], pair["candidate"]["rows"]
         ):
+            baseline_action = np.asarray(baseline["action"])
+            candidate_action = np.asarray(candidate["action"])
+            absolute = np.abs(baseline_action - candidate_action)
+            pair["parity"].append(
+                {
+                    "steps": baseline["steps"],
+                    "max_abs": float(np.max(absolute)),
+                    "mean_abs": float(np.mean(absolute)),
+                }
+            )
             if not np.allclose(
-                baseline["action"], candidate["action"], atol=1e-3, rtol=1e-4
+                baseline_action,
+                candidate_action,
+                atol=args.atol,
+                rtol=args.rtol,
             ):
                 raise RuntimeError("candidate action parity failed")
         results.append(pair)

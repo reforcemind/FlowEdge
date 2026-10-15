@@ -21,7 +21,9 @@ class NativeDeviceTests(unittest.TestCase):
         require_native_device("cuda", SimpleNamespace(cuda=True))
         require_native_device("cuda:0", SimpleNamespace(cuda=True))
         require_native_device(
-            "cuda", SimpleNamespace(cuda=True), engine=SimpleNamespace(cuda_resident=True)
+            "cuda",
+            SimpleNamespace(cuda=True),
+            engine=SimpleNamespace(cuda_resident=True),
         )
 
     def test_cuda_requires_resident_engine(self):
@@ -60,6 +62,15 @@ class NativeDeviceTests(unittest.TestCase):
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
 
         self.assertEqual(FlowEdgeConfig().device, "cpu")
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("lerobot"), "requires the optional LeRobot runtime"
+    )
+    def test_approximate_plugin_precision_requires_cuda(self):
+        from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
+
+        with self.assertRaisesRegex(ValueError, "requires device=cuda"):
+            FlowEdgeConfig(diffusion_precision="approx-fp16-deep")
 
 
 if __name__ == "__main__":

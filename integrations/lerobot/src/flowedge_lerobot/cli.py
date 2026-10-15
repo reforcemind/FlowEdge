@@ -121,6 +121,12 @@ def _parser() -> argparse.ArgumentParser:
         help="FlowEdge Core backend; cuda requires FLOWEDGE_BACKEND=cuda",
     )
     parser.add_argument(
+        "--precision",
+        choices=("exact-f32", "approx-fp16-deep"),
+        default="exact-f32",
+        help="explicit diffusion precision; approximate mode requires CUDA",
+    )
+    parser.add_argument(
         "--period-ms",
         type=float,
         default=None,
@@ -137,7 +143,9 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="include checkpoint path, thread count, and CPU summary in JSON",
     )
-    parser.add_argument("--output", type=Path, default=None, help="write JSON to this path")
+    parser.add_argument(
+        "--output", type=Path, default=None, help="write JSON to this path"
+    )
     return parser
 
 
@@ -236,7 +244,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(error))
     started = time.perf_counter()
     policy = FlowEdgeDiffusionPolicy.from_checkpoint(
-        args.checkpoint, threads=args.threads, device=args.device
+        args.checkpoint,
+        threads=args.threads,
+        device=args.device,
+        precision=args.precision,
     )
     startup_ms = (time.perf_counter() - started) * 1_000
     if args.device == "cuda":
@@ -262,6 +273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         evaluation_kind="synthetic_integration_smoke",
         peak_rss_bytes=peak_rss_bytes(),
         device=args.device,
+        precision=getattr(policy, "precision", args.precision),
     )
     jetson = _jetson_facts() if args.host_facts else None
     if args.device == "cuda":
