@@ -513,6 +513,54 @@ TEST(CudaMatmul, ResidentRowsMatchDoubleReferenceWithoutAllocation)
   }
 }
 
+TEST(CudaLinear, FusedBiasAndMishMatchReferenceWithoutAllocation)
+{
+  ASSERT_TRUE(fe::cuda_ops::device_available());
+  using Buffer = std::unique_ptr<float, decltype(&fe::cuda_ops::device_free)>;
+  const auto allocate = [](std::size_t count) {
+    return Buffer{static_cast<float*>(fe::cuda_ops::device_alloc(count * sizeof(float))),
+                  &fe::cuda_ops::device_free};
+  };
+  for (const bool apply_mish : {false, true}) {
+    constexpr std::size_t width = 260uz;
+    constexpr std::size_t outputs = 1024uz;
+    const auto input = seq(width, 0.013F, -0.4F);
+    const auto weight = seq(outputs * width, 0.001F, -0.2F);
+    const auto bias = seq(outputs, 0.017F, -0.1F);
+    std::vector<float> expected(outputs), actual(outputs);
+    for (std::size_t output = 0; output < outputs; ++output) {
+      float value = bias[output];
+      for (std::size_t index = 0; index < width; ++index)
+        value += input[index] * weight[(output * width) + index];
+      if (apply_mish)
+        value *= std::tanh(std::max(value, 0.0F) + std::log1p(std::exp(-std::abs(value))));
+      expected[output] = value;
+    }
+    auto device_input = allocate(input.size());
+    auto device_weight = allocate(weight.size());
+    auto device_bias = allocate(bias.size());
+    auto device_output = allocate(actual.size());
+    ASSERT_NE(device_input, nullptr);
+    ASSERT_NE(device_weight, nullptr);
+    ASSERT_NE(device_bias, nullptr);
+    ASSERT_NE(device_output, nullptr);
+    ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(device_input.get(), input.data(),
+                                              input.size() * sizeof(float)));
+    ASSERT_TRUE(fe::cuda_ops::device_copy_h2d(device_weight.get(), weight.data(),
+                                              weight.size() * sizeof(float)));
+    ASSERT_TRUE(
+        fe::cuda_ops::device_copy_h2d(device_bias.get(), bias.data(), bias.size() * sizeof(float)));
+    const auto mallocs = fe::cuda_ops::device_malloc_count();
+    fe::cuda_ops::linear_f32_device(device_input.get(), device_weight.get(), device_bias.get(),
+                                    device_output.get(), width, outputs, apply_mish);
+    ASSERT_TRUE(fe::cuda_ops::device_copy_d2h(actual.data(), device_output.get(),
+                                              actual.size() * sizeof(float)));
+    EXPECT_EQ(fe::cuda_ops::device_malloc_count(), mallocs);
+    for (std::size_t index = 0; index < outputs; ++index)
+      EXPECT_NEAR(actual[index], expected[index], 2e-4F);
+  }
+}
+
 TEST(CudaNormMish, MatchesIndependentEpiloguesWithoutAllocation)
 {
   ASSERT_TRUE(fe::cuda_ops::device_available());

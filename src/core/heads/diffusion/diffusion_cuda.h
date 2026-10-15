@@ -1,7 +1,10 @@
 #pragma once
 
+#include "heads/diffusion/diffusion_precision.h"
+
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
 namespace fe {
@@ -21,6 +24,7 @@ public:
     std::size_t out_channels{};
     std::size_t kernel{};
     bool k_major{};
+    bool approximate_candidate{};
   };
 
   struct NormHost
@@ -64,6 +68,7 @@ public:
 
   struct LoadSpec
   {
+    DiffusionPrecision precision{DiffusionPrecision::ExactF32};
     std::size_t action_dim{};
     std::size_t horizon{};
     std::size_t condition_dim{};
@@ -113,6 +118,7 @@ private:
   struct Conv
   {
     float* weight{};
+    void* half_weight{};
     float* bias{};
     std::size_t in_channels{};
     std::size_t out_channels{};
@@ -166,6 +172,13 @@ private:
     std::size_t used{};
   };
 
+  struct HalfPack
+  {
+    std::uint16_t* base{};
+    std::size_t cap{};
+    std::size_t used{};
+  };
+
   struct Bump
   {
     float* base{};
@@ -175,12 +188,15 @@ private:
 
   [[nodiscard]] static std::size_t align16(std::size_t n) noexcept;
   [[nodiscard]] static std::size_t weight_floats(const LoadSpec& spec) noexcept;
+  [[nodiscard]] static std::size_t half_weight_values(const LoadSpec& spec) noexcept;
   [[nodiscard]] bool pack_put(Pack& pack, const float* host, std::size_t count,
                               float*& dst) noexcept;
-  [[nodiscard]] bool upload_conv(Pack& pack, const ConvHost& src, Conv& dst) noexcept;
+  [[nodiscard]] bool upload_conv(Pack& pack, HalfPack& half_pack, const LoadSpec& spec,
+                                 const ConvHost& src, Conv& dst) noexcept;
   [[nodiscard]] bool upload_norm(Pack& pack, const NormHost& src, Norm& dst) noexcept;
   [[nodiscard]] bool upload_linear(Pack& pack, const LinearHost& src, Linear& dst) noexcept;
-  [[nodiscard]] bool upload_residual(Pack& pack, const ResidualHost& src, Residual& dst) noexcept;
+  [[nodiscard]] bool upload_residual(Pack& pack, HalfPack& half_pack, const LoadSpec& spec,
+                                     const ResidualHost& src, Residual& dst) noexcept;
   [[nodiscard]] float* bump_alloc(Bump& bump, std::size_t n) noexcept;
   [[nodiscard]] bool residual_forward(float* input, std::size_t length, const Residual& weights,
                                       float* condition_mish, Bump& bump, float* output) noexcept;
@@ -205,6 +221,7 @@ private:
   float* action_min_{};
   float* action_max_{};
   float* weights_{};
+  std::uint16_t* half_weights_{};
   float* scratch_{};
   float* condition_{};
   float* x_{};

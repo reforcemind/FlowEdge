@@ -210,13 +210,26 @@ int diffusion_scheduler_id(std::string_view scheduler)
   throw std::runtime_error("scheduler must be one of: ddim, ddpm");
 }
 
+int diffusion_precision_id(std::string_view precision)
+{
+  if (precision == "exact-f32")
+    return FE_DIFFUSION_PRECISION_EXACT_F32;
+  if (precision == "approx-fp16-deep")
+    return FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP;
+  throw std::runtime_error("diffusion precision must be one of: exact-f32, approx-fp16-deep");
+}
+
 // Mamba + flow-matching action head
 class Engine
 {
 public:
-  explicit Engine(const std::string& path, std::optional<unsigned> threads)
-      : engine_{threads ? fe_engine_load_with_threads(path.c_str(), *threads)
-                        : fe_engine_load(path.c_str())},
+  explicit Engine(const std::string& path, std::optional<unsigned> threads,
+                  std::string_view diffusion_precision)
+      : engine_{threads ? fe_engine_load_with_threads_and_diffusion_precision(
+                              path.c_str(), *threads, diffusion_precision_id(diffusion_precision))
+                        : fe_engine_load_with_diffusion_precision(path.c_str(),
+                                                                  diffusion_precision_id(
+                                                                      diffusion_precision))},
         numpy_{py::module_::import("numpy")}
   {
     if (engine_ == nullptr)
@@ -234,6 +247,12 @@ public:
   [[nodiscard]] int diffusion_cuda_device() const
   {
     return fe_engine_diffusion_cuda_device(engine_);
+  }
+  [[nodiscard]] std::string_view diffusion_precision() const
+  {
+    return fe_engine_diffusion_precision(engine_) == FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP
+               ? "approx-fp16-deep"
+               : "exact-f32";
   }
   [[nodiscard]] py::dict diffusion_metadata() const
   {
@@ -930,8 +949,9 @@ PYBIND11_MODULE(flowedge, m)
   m.doc() = "FlowEdge: flow-matching action-head inference";
 
   py::class_<Engine>(m, "Engine")
-      .def(py::init<const std::string&, std::optional<unsigned>>(), py::arg("path"),
-           py::arg("threads") = py::none())
+      .def(py::init<const std::string&, std::optional<unsigned>, std::string_view>(),
+           py::arg("path"), py::arg("threads") = py::none(),
+           py::arg("diffusion_precision") = "exact-f32")
       .def_property_readonly("action_dim", &Engine::action_dim)
       .def_property_readonly("action_horizon", &Engine::action_horizon)
       .def_property_readonly("condition_dim", &Engine::condition_dim)
@@ -939,6 +959,7 @@ PYBIND11_MODULE(flowedge, m)
       .def_property_readonly("thread_count", &Engine::thread_count)
       .def_property_readonly("cuda_resident", &Engine::cuda_resident)
       .def_property_readonly("diffusion_cuda_device", &Engine::diffusion_cuda_device)
+      .def_property_readonly("diffusion_precision", &Engine::diffusion_precision)
       .def_property_readonly("model_metadata", &Engine::model_metadata)
       .def_property_readonly("diffusion_metadata", &Engine::diffusion_metadata)
       .def("run", &Engine::run, py::arg("tokens"))

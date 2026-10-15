@@ -14,10 +14,13 @@ is then 0. That is not `fe_engine_load` failure. `FLOWEDGE_CUDA_REQUIRED=1` fail
 load when attach did not happen. `FLOWEDGE_CUDA_FORCE_HOST=1` skips the upload.
 `--device cuda` still fails closed unless residency is true.
 
-Published CUDA matched replay on GTX 1650 stays **131 vs 345 ms**. Fusion and
-BF16/FP16 weight traffic stay ungated until isolate **and** native DDIM / policy
-p50 both move on a card that can load the U-Net. Do not replace that headline
-from a mix or a new GPU.
+Published CUDA matched replay on GTX 1650 stays **131 vs 345 ms** for the exact path. An explicit
+`approx-fp16-deep` mode is separately gated: six deep convolution weight tensors use FP16 with
+FP32 accumulation/output. Five alternating native 10-step trials measured 104.216 ms exact versus
+82.620 ms approximate (20.7% lower); matched PushT seeds 7–16 remained 8/10 successful in both
+modes, with mean maximum reward 0.998138 exact versus 0.998099 approximate. This is simulation and
+GTX 1650 evidence, not SO-101 or Jetson evidence. See the
+{download}`raw artifact <../../bench/artifacts/policy/cuda-fp16-deep-2026-10-15/README.md>`.
 
 The **Mamba backbone**, **flow head**, and **Diffusion Policy head** are
 device-resident. `Mamba` uploads `backbone.*` weights and layer scratch once at
@@ -40,10 +43,17 @@ from the same CUDA TU. Short PushT horizons launch with `block.x` matching `L`
 so time-axis stores stay coalesced; `conv_transpose1d` recovers `it` from `ot`,
 `k`, and stride instead of scanning `input_length`. L=4 and L=8 dense conv
 split `IC` across the block so the inner reduction is not serial; L=16 stays
-2D. GroupNorm launches one block per group. FiLM GEMM `rows=1` uses a 1D
-launch. K-major L=8 upsample uses the same split-K pattern. `flowedge_cuda_dp_mix`
+2D. GroupNorm launches one block per group. FiLM GEMM `rows=1` uses a 1D launch and fuses its
+bias; timestep input also fuses Mish. This removes 150 launches from a 10-step sample (1,000 to
+850). Five alternating exact-FP32 native trials were 105.815 ms before versus 104.257 ms after
+(1.47% lower), with bitwise-identical actions. K-major L=8 upsample uses the same split-K pattern.
+`flowedge_cuda_dp_mix`
 isolates those shapes and, with a checkpoint, prints a launch census for one
 native 10-step DDIM.
+The {download}`launch-fusion artifact
+<../../bench/artifacts/policy/cuda-launch-fusion-2026-10-15/README.md>` contains the end-to-end
+confirmation; the previously tested full CUDA Graph doubled latency and remains rejected in issue
+#181.
 See [#174](https://github.com/reforcemind/FlowEdge/issues/174),
 [#176](https://github.com/reforcemind/FlowEdge/issues/176),
 [#179](https://github.com/reforcemind/FlowEdge/issues/179), and

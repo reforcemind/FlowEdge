@@ -27,6 +27,8 @@ TEST(CAbiContract, StatusValuesAreStable)
   EXPECT_EQ(FE_STATUS_CANCELLED, 8);
   EXPECT_EQ(FE_STATUS_INCOMPATIBLE_STATE, 9);
   EXPECT_EQ(FE_STATUS_CORRUPT_STATE, 10);
+  EXPECT_EQ(FE_DIFFUSION_PRECISION_EXACT_F32, 0);
+  EXPECT_EQ(FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP, 1);
 }
 
 TEST(CAbiContract, NullHandlesReportInvalidArguments)
@@ -73,10 +75,17 @@ TEST(CAbiContract, NullHandlesReportInvalidArguments)
   EXPECT_EQ(fe_engine_condition_dim(nullptr), 0uz);
   EXPECT_EQ(fe_engine_cuda_resident(nullptr), 0);
   EXPECT_EQ(fe_engine_diffusion_cuda_device(nullptr), -1);
+  EXPECT_EQ(fe_engine_diffusion_precision(nullptr), FE_DIFFUSION_PRECISION_EXACT_F32);
   EXPECT_EQ(fe_engine_sample_diffusion_device(nullptr, nullptr, nullptr, 0uz, FE_DIFFUSION_DDIM, 0u,
                                               0uz, 0uz, nullptr),
             FE_STATUS_INVALID_ARGUMENT);
   EXPECT_EQ(fe_weights_size_bytes(nullptr), 0uz);
+}
+
+TEST(CAbiContract, RejectsUnknownDiffusionPrecision)
+{
+  EXPECT_EQ(fe_engine_load_with_threads_and_diffusion_precision(nullptr, 0u, 99), nullptr);
+  EXPECT_NE(std::string{fe_engine_last_error()}.find("precision"), std::string::npos);
 }
 
 TEST(CAbiContract, LastErrorIsThreadLocal)
@@ -134,6 +143,20 @@ TEST(CAbiContract, CudaRequiredFailsClosedOnCpuBinary)
   EXPECT_EQ(fe_engine_load_with_threads(model.string().c_str(), 0u), nullptr);
   EXPECT_NE(std::string{fe_engine_last_error()}.find("did not attach"), std::string::npos);
 #endif
+}
+
+TEST(CAbiContract, ApproximateDiffusionPrecisionRejectsNonDiffusionModels)
+{
+  const std::filesystem::path model =
+      std::filesystem::path{FLOWEDGE_SOURCE_DIR} / "models" / "mamba_flow.safetensors";
+  if (!std::filesystem::exists(model))
+    GTEST_SKIP() << "models/mamba_flow.safetensors is not available";
+
+  EXPECT_EQ(fe_engine_load_with_threads_and_diffusion_precision(
+                model.string().c_str(), 0u, FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP),
+            nullptr);
+  EXPECT_NE(std::string{fe_engine_last_error()}.find("CUDA-resident diffusion head"),
+            std::string::npos);
 }
 
 TEST(CAbiContract, LoadKeepsCpuKernelsWhenCudaDoesNotAttach)

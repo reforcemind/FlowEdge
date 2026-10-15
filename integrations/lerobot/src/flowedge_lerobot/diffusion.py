@@ -98,15 +98,22 @@ class FlowEdgeDiffusionPolicy:
 
     @classmethod
     def from_checkpoint(
-        cls, path: str, *, threads: int | None = None, device: str = "cpu"
+        cls,
+        path: str,
+        *,
+        threads: int | None = None,
+        device: str = "cpu",
+        precision: str = "exact-f32",
     ) -> FlowEdgeDiffusionPolicy:
-        """Load a converted checkpoint without making FlowEdge a LeRobot dependency."""
+        """Load a converted checkpoint with exact FP32 or opt-in approximate CUDA weights."""
         import flowedge
 
         from .device import require_native_device
 
         require_native_device(device, flowedge)
-        engine = flowedge.Engine(path, threads=threads)
+        if precision == "approx-fp16-deep" and device != "cuda":
+            raise ValueError("approx-fp16-deep precision requires device='cuda'")
+        engine = flowedge.Engine(path, threads=threads, diffusion_precision=precision)
         require_native_device(device, flowedge, engine=engine)
         return cls(engine)
 
@@ -117,6 +124,10 @@ class FlowEdgeDiffusionPolicy:
     @property
     def cuda_resident(self) -> bool:
         return bool(getattr(self._engine, "cuda_resident", False))
+
+    @property
+    def precision(self) -> str:
+        return str(getattr(self._engine, "diffusion_precision", "exact-f32"))
 
     @property
     def action_dim(self) -> int:

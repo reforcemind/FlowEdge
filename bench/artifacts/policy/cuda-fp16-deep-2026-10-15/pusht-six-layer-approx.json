@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "scope": "matched gym_pusht/PushT-v0 simulation; IPC excluded from latency",
+  "seed": 7,
+  "steps": 10,
+  "max_steps": 300,
+  "results": [
+    {
+      "precision": "approx-fp16-deep",
+      "episodes": [
+        {
+          "seed": 7,
+          "success": true,
+          "steps": 174,
+          "max_reward": 1.0,
+          "elapsed_s": 3.125117700023111
+        },
+        {
+          "seed": 8,
+          "success": true,
+          "steps": 168,
+          "max_reward": 1.0,
+          "elapsed_s": 2.7520023999968544
+        },
+        {
+          "seed": 9,
+          "success": true,
+          "steps": 201,
+          "max_reward": 1.0,
+          "elapsed_s": 3.3546555999782868
+        },
+        {
+          "seed": 10,
+          "success": true,
+          "steps": 184,
+          "max_reward": 1.0,
+          "elapsed_s": 3.009304599952884
+        },
+        {
+          "seed": 11,
+          "success": true,
+          "steps": 166,
+          "max_reward": 1.0,
+          "elapsed_s": 2.7732876000227407
+        },
+        {
+          "seed": 12,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9812944358713084,
+          "elapsed_s": 5.017782000009902
+        },
+        {
+          "seed": 13,
+          "success": true,
+          "steps": 150,
+          "max_reward": 1.0,
+          "elapsed_s": 2.49491389998002
+        },
+        {
+          "seed": 14,
+          "success": true,
+          "steps": 126,
+          "max_reward": 1.0,
+          "elapsed_s": 2.0732507000211626
+        },
+        {
+          "seed": 15,
+          "success": true,
+          "steps": 192,
+          "max_reward": 1.0,
+          "elapsed_s": 3.2919220999465324
+        },
+        {
+          "seed": 16,
+          "success": false,
+          "steps": 300,
+          "max_reward": 0.9996976992717928,
+          "elapsed_s": 5.074164899997413
+        }
+      ],
+      "success_rate": 0.8,
+      "mean_max_reward": 0.9980992135143101
+    }
+  ],
+  "limitations": [
+    "Simulation only; no SO-101 hardware validation.",
+    "The image encoder runs on Windows CPU and the native denoiser in WSL CUDA."
+  ]
+}

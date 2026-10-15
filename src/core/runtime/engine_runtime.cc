@@ -144,13 +144,22 @@ unsigned EngineRuntime::recommended_thread_count() noexcept
 
 EngineRuntime::EngineRuntime(std::shared_ptr<const ModelWeights> weights, std::size_t slab_bytes,
                              unsigned worker_threads, const char*& error)
+    : EngineRuntime{std::move(weights), slab_bytes, worker_threads, DiffusionPrecision::ExactF32,
+                    error}
+{
+}
+
+EngineRuntime::EngineRuntime(std::shared_ptr<const ModelWeights> weights, std::size_t slab_bytes,
+                             unsigned worker_threads, DiffusionPrecision diffusion_precision,
+                             const char*& error)
     : weights_{std::move(weights)}, slab_{slab_bytes},
       arena_{std::span<std::byte>{slab_.data(), slab_.size()}},
       model_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_},
       smolvla_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_},
       transformer_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_},
       flow_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_},
-      diffusion_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_}
+      diffusion_{weights_ ? weights_->tensors() : std::span<const TensorView>{}, arena_,
+                 diffusion_precision}
 {
   if (!weights_) {
     error = "Immutable model weights are unavailable";

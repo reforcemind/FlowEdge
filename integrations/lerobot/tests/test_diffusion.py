@@ -12,6 +12,7 @@ class FakeEngine:
         "action_steps": 3,
         "observation_steps": 2,
     }
+    diffusion_precision = "approx-fp16-deep"
 
     def __init__(self):
         self.calls = []
@@ -43,6 +44,14 @@ class LegacyFakeEngine:
 
 
 class DiffusionAdapterTests(unittest.TestCase):
+    def test_adapter_reports_resolved_precision(self):
+        self.assertEqual(
+            FlowEdgeDiffusionPolicy(FakeEngine()).precision, "approx-fp16-deep"
+        )
+        self.assertEqual(
+            FlowEdgeDiffusionPolicy(LegacyFakeEngine()).precision, "exact-f32"
+        )
+
     def test_contract_slices_the_le_robot_action_chunk(self):
         contract = DiffusionActionContract.from_metadata(FakeEngine.diffusion_metadata)
         self.assertEqual(contract.action_start, 1)

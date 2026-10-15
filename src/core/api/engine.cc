@@ -91,8 +91,8 @@ void copy_digest(fe_model_digest& destination, const fe::ModelDigest& source) no
 struct FeEngine
 {
   FeEngine(std::shared_ptr<const fe::ModelWeights> weights, std::size_t slab_bytes,
-           unsigned worker_threads, const char*& error)
-      : runtime{std::move(weights), slab_bytes, worker_threads, error}
+           unsigned worker_threads, fe::DiffusionPrecision diffusion_precision, const char*& error)
+      : runtime{std::move(weights), slab_bytes, worker_threads, diffusion_precision, error}
   {
   }
 
@@ -106,7 +106,8 @@ struct FeWeights
 
 namespace {
 
-fe_engine* create_engine(std::shared_ptr<const fe::ModelWeights> weights, unsigned worker_threads)
+fe_engine* create_engine(std::shared_ptr<const fe::ModelWeights> weights, unsigned worker_threads,
+                         fe::DiffusionPrecision diffusion_precision)
 {
   if (worker_threads > fe::EngineRuntime::kMaxPoolThreads) {
     last_error() = "Worker thread count must be from 0 through 8";
@@ -122,10 +123,15 @@ fe_engine* create_engine(std::shared_ptr<const fe::ModelWeights> weights, unsign
       last_error() = "Failed to size model runtime state";
       return nullptr;
     }
-    auto engine =
-        std::make_unique<FeEngine>(std::move(weights), slab_bytes, worker_threads, last_error());
+    auto engine = std::make_unique<FeEngine>(std::move(weights), slab_bytes, worker_threads,
+                                             diffusion_precision, last_error());
     if (!engine->runtime.valid()) {
       last_error() = "Model architecture initialization failed";
+      return nullptr;
+    }
+    if (diffusion_precision == fe::DiffusionPrecision::ApproxFp16Deep &&
+        (engine->runtime.diffusion_config() == nullptr || !engine->runtime.cuda_resident())) {
+      last_error() = "Approximate FP16-deep precision requires a CUDA-resident diffusion head";
       return nullptr;
     }
     if (fe::environment_flag("FLOWEDGE_CUDA_REQUIRED")) {
@@ -152,7 +158,8 @@ fe_engine* create_engine(std::shared_ptr<const fe::ModelWeights> weights, unsign
   }
 }
 
-fe_engine* load_engine(const char* path, unsigned worker_threads)
+fe_engine* load_engine(const char* path, unsigned worker_threads,
+                       fe::DiffusionPrecision diffusion_precision)
 {
   if (path == nullptr) {
     last_error() = "Invalid null model path";
@@ -163,7 +170,7 @@ fe_engine* load_engine(const char* path, unsigned worker_threads)
     last_error() = weights.error();
     return nullptr;
   }
-  return create_engine(*weights, worker_threads);
+  return create_engine(*weights, worker_threads, diffusion_precision);
 }
 
 } // namespace
@@ -177,13 +184,39 @@ fe_engine* fe_engine_load(const char* path)
 {
   last_error() = "";
   const std::optional<unsigned> worker_threads = environment_thread_count(last_error());
-  return worker_threads ? load_engine(path, *worker_threads) : nullptr;
+  return worker_threads ? load_engine(path, *worker_threads, fe::DiffusionPrecision::ExactF32)
+                        : nullptr;
 }
 
 fe_engine* fe_engine_load_with_threads(const char* path, unsigned worker_threads)
 {
   last_error() = "";
-  return load_engine(path, worker_threads);
+  return load_engine(path, worker_threads, fe::DiffusionPrecision::ExactF32);
+}
+
+fe_engine* fe_engine_load_with_threads_and_diffusion_precision(const char* path,
+                                                               unsigned worker_threads,
+                                                               int precision)
+{
+  last_error() = "";
+  if (precision != FE_DIFFUSION_PRECISION_EXACT_F32 &&
+      precision != FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP) {
+    last_error() = "Diffusion precision must be exact-f32 or approx-fp16-deep";
+    return nullptr;
+  }
+  const auto selected = precision == FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP
+                            ? fe::DiffusionPrecision::ApproxFp16Deep
+                            : fe::DiffusionPrecision::ExactF32;
+  return load_engine(path, worker_threads, selected);
+}
+
+fe_engine* fe_engine_load_with_diffusion_precision(const char* path, int precision)
+{
+  last_error() = "";
+  const std::optional<unsigned> worker_threads = environment_thread_count(last_error());
+  return worker_threads
+             ? fe_engine_load_with_threads_and_diffusion_precision(path, *worker_threads, precision)
+             : nullptr;
 }
 
 fe_weights* fe_weights_load(const char* path)
@@ -223,7 +256,7 @@ fe_engine* fe_engine_create_from_weights(const fe_weights* weights, unsigned wor
     last_error() = "Invalid null model weights";
     return nullptr;
   }
-  return create_engine(weights->value, worker_threads);
+  return create_engine(weights->value, worker_threads, fe::DiffusionPrecision::ExactF32);
 }
 
 fe_engine* fe_engine_create_from_weights_auto(const fe_weights* weights)
@@ -234,7 +267,9 @@ fe_engine* fe_engine_create_from_weights_auto(const fe_weights* weights)
     return nullptr;
   }
   const std::optional<unsigned> worker_threads = environment_thread_count(last_error());
-  return worker_threads ? create_engine(weights->value, *worker_threads) : nullptr;
+  return worker_threads
+             ? create_engine(weights->value, *worker_threads, fe::DiffusionPrecision::ExactF32)
+             : nullptr;
 }
 
 void fe_engine_free(fe_engine* engine)
@@ -265,6 +300,15 @@ int fe_engine_cuda_resident(const fe_engine* engine)
 int fe_engine_diffusion_cuda_device(const fe_engine* engine)
 {
   return engine != nullptr ? engine->runtime.diffusion_cuda_device() : -1;
+}
+
+int fe_engine_diffusion_precision(const fe_engine* engine)
+{
+  if (engine == nullptr)
+    return FE_DIFFUSION_PRECISION_EXACT_F32;
+  return engine->runtime.diffusion_precision() == fe::DiffusionPrecision::ApproxFp16Deep
+             ? FE_DIFFUSION_PRECISION_APPROX_FP16_DEEP
+             : FE_DIFFUSION_PRECISION_EXACT_F32;
 }
 
 int fe_engine_model_metadata(const fe_engine* engine, fe_model_metadata* metadata)

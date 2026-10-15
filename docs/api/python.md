@@ -152,6 +152,21 @@ buffer. Seeded `scheduler="ddpm"` is deterministic; the DDIM result depends only
 on the condition and supplied initial noise. `diffusion_denoise` runs one
 normalized U-Net pass for verification or profiling.
 
+`diffusion_precision="exact-f32"` is the default. CUDA builds may opt into the calibrated
+approximate profile explicitly:
+
+```python
+e = flowedge.Engine(
+    "models/diffusion_pusht.flowedge.safetensors",
+    diffusion_precision="approx-fp16-deep",
+)
+assert e.cuda_resident and e.diffusion_precision == "approx-fp16-deep"
+```
+
+Approximate mode fails closed if the diffusion head is not CUDA-resident. It keeps activations,
+accumulation, and output in FP32; only six calibrated deep-convolution weight tensors use FP16.
+The exact path and its parity contract are unchanged.
+
 A CUDA source build also accepts any contiguous CUDA float32 tensors implementing DLPack:
 
 ```python

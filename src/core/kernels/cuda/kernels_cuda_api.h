@@ -40,6 +40,8 @@ void device_free(void* ptr) noexcept;
 void silu_device(float* x, std::size_t n) noexcept;
 void matmul_f32_device(const float* in, const float* w, float* out, std::size_t rows,
                        std::size_t in_dim, std::size_t out_dim) noexcept;
+void linear_f32_device(const float* in, const float* weight, const float* bias, float* out,
+                       std::size_t in_dim, std::size_t out_dim, bool mish) noexcept;
 void add3_device(float* x, const float* y, const float* z, std::size_t n) noexcept;
 void add_scaled_device(float* x, const float* dx, float scale, std::size_t n) noexcept;
 void scaled_sum_device(const float* x, const float* dx, float scale, float* out,
@@ -72,6 +74,8 @@ void conv1d_device(const float* x, const float* weight, const float* bias, float
                    std::size_t in_channels, std::size_t out_channels, std::size_t input_length,
                    std::size_t output_length, std::size_t kernel, std::size_t stride,
                    std::size_t padding) noexcept;
+void conv1d_f16_k5_l4_device(const float* x, const void* weight, const float* bias, float* y,
+                             std::size_t in_channels, std::size_t out_channels) noexcept;
 void conv_transpose1d_device(const float* x, const float* weight, const float* bias, float* y,
                              std::size_t in_channels, std::size_t out_channels,
                              std::size_t input_length, std::size_t output_length,

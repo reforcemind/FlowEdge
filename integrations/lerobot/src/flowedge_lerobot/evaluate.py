@@ -70,6 +70,13 @@ def main(argv=None):
     )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument(
+        "--precision",
+        choices=("exact-f32", "approx-fp16-deep"),
+        default="exact-f32",
+        help="explicit native diffusion precision; approximate mode requires CUDA",
+    )
     parser.add_argument(
         "--period-ms", type=float, help="enable periodic asynchronous delivery"
     )
@@ -86,7 +93,10 @@ def main(argv=None):
     validate_source_pair(args.checkpoint, args.source)
     encoder = DiffusionObservationEncoder(args.source)
     native = FlowEdgeDiffusionPolicy.from_checkpoint(
-        args.checkpoint, threads=args.threads
+        args.checkpoint,
+        threads=args.threads,
+        device=args.device,
+        precision=args.precision,
     )
     policy = native
     if args.backend == "lerobot":
@@ -179,6 +189,8 @@ def main(argv=None):
         "plans_sha256": sha256(args.plans) if args.plans else None,
         "period_ms": args.period_ms,
         "threads": args.threads,
+        "device": args.device,
+        "precision": native.precision,
         "episodes": reports,
         "success_rate": sum(r["success"] for r in reports) / len(reports),
         "limitations": [

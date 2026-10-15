@@ -32,6 +32,7 @@ class CliTests(unittest.TestCase):
         self.assertIsNone(args.period_ms)
         self.assertEqual(args.on_miss, "hold")
         self.assertEqual(args.device, "cpu")
+        self.assertEqual(args.precision, "exact-f32")
 
     def test_simulator_is_bounded_and_stops(self):
         policy = FakePolicy()
@@ -49,7 +50,12 @@ class CliTests(unittest.TestCase):
             load.return_value = FakePolicy()
             with patch("builtins.print") as print_result:
                 self.assertEqual(main(["policy.safetensors", "--steps", "2"]), 0)
-        load.assert_called_once_with("policy.safetensors", threads=None, device="cpu")
+        load.assert_called_once_with(
+            "policy.safetensors",
+            threads=None,
+            device="cpu",
+            precision="exact-f32",
+        )
         payload = json.loads(print_result.call_args.args[0])
         self.assertEqual(payload["steps"], 2)
         self.assertTrue(payload["stopped"])
@@ -59,6 +65,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(payload["platform"])
         self.assertTrue(payload["machine"])
         self.assertEqual(payload["device"], "cpu")
+        self.assertEqual(payload["precision"], "exact-f32")
 
     def test_cuda_fails_closed_without_native_backend(self):
         with patch.dict(sys.modules, {"flowedge": SimpleNamespace(cuda=False)}):
@@ -93,7 +100,13 @@ class CliTests(unittest.TestCase):
                     with patch("builtins.print") as print_result:
                         self.assertEqual(
                             main(
-                                ["policy.safetensors", "--device", "cuda", "--steps", "1"]
+                                [
+                                    "policy.safetensors",
+                                    "--device",
+                                    "cuda",
+                                    "--steps",
+                                    "1",
+                                ]
                             ),
                             0,
                         )
@@ -113,9 +126,7 @@ class CliTests(unittest.TestCase):
             ):
                 with patch("builtins.print") as print_result:
                     self.assertEqual(
-                        main(
-                            ["policy.safetensors", "--steps", "1", "--host-facts"]
-                        ),
+                        main(["policy.safetensors", "--steps", "1", "--host-facts"]),
                         0,
                     )
         payload = json.loads(print_result.call_args.args[0])

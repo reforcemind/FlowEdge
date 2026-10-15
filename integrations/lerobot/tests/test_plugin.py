@@ -151,7 +151,7 @@ class PluginTests(unittest.TestCase):
             return_value=FlowEdgeDiffusionPolicy(Engine()),
         ) as load:
             FlowEdgePolicy(config)
-        load.assert_called_once_with("fixture", device="cuda:7")
+        load.assert_called_once_with("fixture", device="cuda:7", precision="exact-f32")
 
     def test_smolvla_processor_uses_source_policy_contract(self):
         from lerobot.configs.types import FeatureType, PolicyFeature
@@ -190,7 +190,9 @@ class PluginTests(unittest.TestCase):
         import torch
         from lerobot.configs.types import FeatureType, PolicyFeature
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeSmolVLAConfig
-        from lerobot_policy_flowedge.modeling_flowedge_smolvla import FlowEdgeSmolVLAPolicy
+        from lerobot_policy_flowedge.modeling_flowedge_smolvla import (
+            FlowEdgeSmolVLAPolicy,
+        )
         from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, SmolVLAKVCache
 
         class Engine:
@@ -201,7 +203,9 @@ class PluginTests(unittest.TestCase):
                 "n_layers": 2,
             }
 
-            def smolvla_sample(self, noise, prefix_keys, prefix_values, prefix_mask, steps):
+            def smolvla_sample(
+                self, noise, prefix_keys, prefix_values, prefix_mask, steps
+            ):
                 del noise, prefix_keys, prefix_values, prefix_mask, steps
                 return np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)
 
