@@ -10,9 +10,6 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from safetensors import safe_open
-from safetensors.torch import save_file
-
 PACKAGE_SCHEMA = 1
 NATIVE_CHECKPOINT = "flowedge_model.safetensors"
 SOURCE_DIRECTORY = "source"
@@ -195,6 +192,9 @@ def _copy_processor_state(source: Path, destination: Path) -> list[str]:
 
 
 def _write_encoder_checkpoint(source: Path, destination: Path) -> int:
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
     tensors = {}
     with safe_open(
         source / "model.safetensors", framework="pt", device="cpu"

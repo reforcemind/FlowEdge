@@ -6,10 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import torch
-from safetensors import safe_open
-from safetensors.torch import save_file
-
 from flowedge_lerobot.deployment import (
     NATIVE_CHECKPOINT,
     SOURCE_DIRECTORY,
@@ -51,6 +47,8 @@ class DeploymentPackageTests(unittest.TestCase):
         )
 
     def test_standard_pretrained_path_needs_no_dummy_torch_weights(self):
+        import torch
+
         from flowedge_lerobot import FlowEdgeDiffusionPolicy
         from lerobot_policy_flowedge.configuration_flowedge import FlowEdgeConfig
         from lerobot_policy_flowedge.modeling_flowedge import FlowEdgePolicy
@@ -93,6 +91,10 @@ class DeploymentPackageTests(unittest.TestCase):
         self.assertEqual(Path(load.call_args.args[0]), native.resolve())
 
     def test_package_contains_relative_native_and_slim_visual_source(self):
+        import torch
+        from safetensors import safe_open
+        from safetensors.torch import save_file
+
         inputs, outputs = self._features()
         source_policy = SimpleNamespace(
             n_obs_steps=2,
