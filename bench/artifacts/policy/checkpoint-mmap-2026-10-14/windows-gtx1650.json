@@ -1,0 +1,108 @@
+﻿{
+    "schema_version":  1,
+    "scope":  "flowedge-inspect process load; includes checkpoint validation, fingerprint, and runtime construction",
+    "host":  {
+                 "os":  "Microsoft Windows NT 10.0.26200.0",
+                 "processor":  "Intel64 Family 6 Model 158 Stepping 13, GenuineIntel"
+             },
+    "checkpoint":  {
+                       "file":  "diffusion_pusht.flowedge.safetensors",
+                       "bytes":  1006061268,
+                       "sha256":  "3367c7236d7a0d6da74e28cde1514ecc7b31470ec028e244cf28c93f93e0b5d6"
+                   },
+    "executables":  {
+                        "baseline":  {
+                                         "file":  "flowedge-inspect.exe",
+                                         "sha256":  "cf6dcf1ca4fa4f5e0a63fa7f94b15cebba2925c7e960c0372f5086b822ff7f84"
+                                     },
+                        "candidate":  {
+                                          "file":  "flowedge-inspect.exe",
+                                          "sha256":  "2ce54bf72673bcf0dad3ddebb5131bba56988965c517e0eb34e314faa85de6af"
+                                      }
+                    },
+    "warmup":  1,
+    "trials":  5,
+    "summary":  {
+                    "baseline_median_wall_ms":  877.834,
+                    "candidate_median_wall_ms":  613.298,
+                    "wall_reduction_fraction":  0.30135082487121712,
+                    "baseline_median_peak_private_bytes":  1048662016,
+                    "candidate_median_peak_private_bytes":  42536960,
+                    "private_bytes_removed":  1006125056,
+                    "baseline_median_peak_working_set_bytes":  2005897216,
+                    "candidate_median_peak_working_set_bytes":  1050349568,
+                    "working_set_bytes_removed":  955547648
+                },
+    "samples":  [
+                    {
+                        "name":  "baseline",
+                        "trial":  1,
+                        "wall_ms":  876.956,
+                        "peak_private_bytes":  1048641536,
+                        "peak_working_set_bytes":  1987608576
+                    },
+                    {
+                        "name":  "candidate",
+                        "trial":  1,
+                        "wall_ms":  613.298,
+                        "peak_private_bytes":  42541056,
+                        "peak_working_set_bytes":  1050349568
+                    },
+                    {
+                        "name":  "candidate",
+                        "trial":  2,
+                        "wall_ms":  612.244,
+                        "peak_private_bytes":  42524672,
+                        "peak_working_set_bytes":  1050337280
+                    },
+                    {
+                        "name":  "baseline",
+                        "trial":  2,
+                        "wall_ms":  884.389,
+                        "peak_private_bytes":  1048662016,
+                        "peak_working_set_bytes":  2005897216
+                    },
+                    {
+                        "name":  "baseline",
+                        "trial":  3,
+                        "wall_ms":  884.527,
+                        "peak_private_bytes":  1048653824,
+                        "peak_working_set_bytes":  2014892032
+                    },
+                    {
+                        "name":  "candidate",
+                        "trial":  3,
+                        "wall_ms":  620.492,
+                        "peak_private_bytes":  42536960,
+                        "peak_working_set_bytes":  1050353664
+                    },
+                    {
+                        "name":  "candidate",
+                        "trial":  4,
+                        "wall_ms":  629.548,
+                        "peak_private_bytes":  42536960,
+                        "peak_working_set_bytes":  1050353664
+                    },
+                    {
+                        "name":  "baseline",
+                        "trial":  4,
+                        "wall_ms":  877.834,
+                        "peak_private_bytes":  1048670208,
+                        "peak_working_set_bytes":  2016006144
+                    },
+                    {
+                        "name":  "baseline",
+                        "trial":  5,
+                        "wall_ms":  864.141,
+                        "peak_private_bytes":  1048727552,
+                        "peak_working_set_bytes":  1995657216
+                    },
+                    {
+                        "name":  "candidate",
+                        "trial":  5,
+                        "wall_ms":  605.636,
+                        "peak_private_bytes":  42528768,
+                        "peak_working_set_bytes":  1050349568
+                    }
+                ]
+}

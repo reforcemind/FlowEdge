@@ -12,7 +12,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace fe {
 
@@ -123,6 +122,7 @@ public:
     return {views_.data(), tensor_count_};
   }
   [[nodiscard]] std::size_t weight_bytes() const noexcept { return weight_bytes_; }
+  [[nodiscard]] std::size_t mapped_file_bytes() const noexcept { return mapping_bytes_; }
 
   [[nodiscard]] const DeploymentProfile* deployment_profile() const noexcept
   {
@@ -132,10 +132,11 @@ public:
 private:
   static constexpr std::size_t kMaxTensors = 1024uz;
 
-  ModelWeights(std::size_t weight_bytes, std::optional<DeploymentProfile> deployment_profile);
+  ModelWeights(std::shared_ptr<const std::byte> mapping, std::size_t mapping_bytes,
+               std::optional<DeploymentProfile> deployment_profile);
 
-  std::vector<std::byte> storage_{};
-  Arena arena_;
+  std::shared_ptr<const std::byte> mapping_{};
+  std::size_t mapping_bytes_{};
   std::array<TensorView, kMaxTensors> views_{};
   std::size_t tensor_count_{};
   std::size_t weight_bytes_{};
