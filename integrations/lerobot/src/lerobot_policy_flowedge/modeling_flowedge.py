@@ -15,6 +15,14 @@ class FlowEdgePolicy(PreTrainedPolicy):
     config_class = FlowEdgeConfig
     name = "flowedge"
 
+    @classmethod
+    def from_pretrained(cls, pretrained_name_or_path, **kwargs):
+        """Load the native deployment package without dummy Torch weights."""
+
+        from flowedge_lerobot.deployment import load_deployment_policy
+
+        return load_deployment_policy(cls, pretrained_name_or_path, **kwargs)
+
     def __init__(self, config: FlowEdgeConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
         config.validate_features()

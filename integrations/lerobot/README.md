@@ -15,13 +15,14 @@ Action slice: `actions[observation_steps - 1 : observation_steps - 1 + action_st
 ## Install
 
 ```bash
-python -m pip install -e "integrations/lerobot[dp]"
+python -m pip install -e "integrations/lerobot[so101]"
 python -m unittest discover -s integrations/lerobot/tests
 ```
 
 The plugin requires Python 3.12+ and `lerobot>=0.6.1,<0.7`. An explicit CUDA
 request never falls back to CPU: both the PyTorch encoder and native FlowEdge
-engine must be CUDA-capable.
+engine must be CUDA-capable. Use the smaller `rollout` extra for a non-Feetech
+robot, or `dp` if you only need policy conversion and tests.
 
 On CUDA, the plugin passes the encoded condition, initial noise, and executable action chunk
 through DLPack. These tensors stay on device until LeRobot's postprocessor moves the selected
@@ -58,7 +59,43 @@ CUDA build of FlowEdge, and device-resident weights. Its JSON identifies the
 Jetson model and L4T release. It is a synthetic inference result, not evidence
 of robot task success.
 
-SO-100/SO-101: wrap `reset` / `observe` / `send_action` / `stop` and pass `encode_condition` into `run_rollout`. The plugin does not import a robot driver.
+## Package and run on a robot
+
+Create a relocatable LeRobot policy directory from the matching converted and
+source Diffusion Policy checkpoints:
+
+```bash
+flowedge-lerobot-package \
+  models/my_so101.flowedge.safetensors \
+  outputs/train/diffusion_so101/checkpoints/last/pretrained_model \
+  deploy/my_so101_flowedge
+```
+
+The package contains the native U-Net, the source RGB encoder and normalization
+state, and a LeRobot `config.json`. It does not duplicate the source PyTorch
+U-Net. The source identity is checked before packaging and whenever the package
+loads. Upload the directory to a Hugging Face model repository to use its repo
+ID as `--policy.path` on another machine.
+
+Run it through LeRobot's standard hardware-independent deployment command:
+
+```bash
+lerobot-rollout \
+  --strategy.type=base \
+  --policy.path=deploy/my_so101_flowedge \
+  --robot.type=so101_follower \
+  --robot.port=/dev/ttyACM0 \
+  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+  --task="put the red block in the bowl" \
+  --duration=30
+```
+
+Use `--policy.device=cuda` only with a CUDA FlowEdge build. Add
+`--policy.diffusion_precision=approx-fp16-deep` only after task calibration.
+LeRobot owns connection, cameras, action mapping, joint limits, and emergency
+stop. Commission with an unloaded arm and a short duration.
+
+The lower-level `run_rollout` protocol remains available for non-LeRobot drivers:
 
 ```python
 from flowedge_lerobot import FlowEdgeDiffusionPolicy, run_rollout

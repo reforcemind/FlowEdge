@@ -23,28 +23,48 @@ from lerobot.policies.diffusion.processor_diffusion import (
 )
 
 
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def validate_source_pair(converted, directory):
     """Reject an encoder from a different training checkpoint before inference."""
     directory = Path(directory)
     with safe_open(converted, framework="numpy") as weights:
         metadata = weights.metadata() or {}
-    digest = hashlib.sha256()
-    with (directory / "model.safetensors").open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
     config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
     config_hash = hashlib.sha256(
         json.dumps(
             config, sort_keys=True, separators=(",", ":"), ensure_ascii=True
         ).encode("utf-8")
     ).hexdigest()
+    source_hash = _sha256(directory / "model.safetensors")
+    manifest_path = directory / "flowedge-source.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schema") != 1:
+            raise ValueError("unsupported FlowEdge source package schema")
+        if (
+            manifest.get("encoder_model_sha256") != source_hash
+            or manifest.get("source_config_sha256") != config_hash
+        ):
+            raise ValueError("FlowEdge source package integrity mismatch")
+        source_hash = manifest.get("original_model_sha256", "")
     if (
-        metadata.get("flowedge.source_sha256") != digest.hexdigest()
+        metadata.get("flowedge.source_sha256") != source_hash
         or metadata.get("flowedge.source_config_sha256") != config_hash
     ):
         raise ValueError(
             "source/converted identity mismatch; reconvert from this exact source directory"
         )
+    return {
+        "source_sha256": source_hash,
+        "source_config_sha256": config_hash,
+    }
 
 
 def source_config(directory, device="cpu"):
@@ -65,7 +85,9 @@ def source_config(directory, device="cpu"):
     args["normalization_mapping"] = {
         k: NormalizationMode(v) for k, v in raw["normalization_mapping"].items()
     }
-    args.update(device=str(device), pretrained_backbone_weights=None, compile_model=False)
+    args.update(
+        device=str(device), pretrained_backbone_weights=None, compile_model=False
+    )
     config = DiffusionConfig(**args)
     config.validate_features()
     if config.use_separate_rgb_encoder_per_camera:
@@ -194,7 +216,9 @@ class DiffusionObservationEncoder:
             raise ValueError("observe must precede condition")
         device = getattr(self, "device", torch.device("cpu"))
         features = [
-            torch.stack([f["observation.state"] for f in self.history], dim=1).to(device)
+            torch.stack([f["observation.state"] for f in self.history], dim=1).to(
+                device
+            )
         ]
         images = torch.stack(
             [
