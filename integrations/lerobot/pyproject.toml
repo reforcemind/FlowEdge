@@ -20,6 +20,7 @@ flowedge-lerobot-rollout = "flowedge_lerobot.cli:main"
 flowedge-lerobot-benchmark = "flowedge_lerobot.benchmark:main"
 flowedge-lerobot-evaluate = "flowedge_lerobot.evaluate:main"
 flowedge-lerobot-package = "flowedge_lerobot.deployment:main"
+flowedge-lerobot-preflight = "flowedge_lerobot.preflight:main"
 
 [project.optional-dependencies]
 evaluation = ["gym-pusht==0.1.5", "pymunk>=6.6,<7"]

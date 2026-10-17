@@ -77,6 +77,20 @@ U-Net. The source identity is checked before packaging and whenever the package
 loads. Upload the directory to a Hugging Face model repository to use its repo
 ID as `--policy.path` on another machine.
 
+Before connecting hardware, verify the package and exercise the same RGB/state
+preprocessing, encoder, native U-Net, and action-chunk path:
+
+```bash
+flowedge-lerobot-preflight deploy/my_so101_flowedge \
+  --iterations 5 --output flowedge-preflight.json
+```
+
+Use `--device cuda` for a CUDA build. The command fails if native weights are
+not device-resident and records hashes, the policy contract, startup/RSS, and
+fresh action-chunk latency. It uses synthetic zero observations, so it does not
+establish camera compatibility, robot safety, or task success. Attach the JSON
+report when filing a deployment issue.
+
 Run it through LeRobot's standard hardware-independent deployment command:
 
 ```bash

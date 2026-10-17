@@ -36,6 +36,7 @@ _COMMANDS: dict[str, dict[str, Path]] = {
         "convert": ROOT / "convert/convert.py",
         "inspect": ROOT / "convert/policy_inspect.py",
         "package": ROOT / "integrations/lerobot/src/flowedge_lerobot/deployment.py",
+        "preflight": ROOT / "integrations/lerobot/src/flowedge_lerobot/preflight.py",
         "rollout": ROOT / "tools/verification/run_edge_dp_rollout.py",
         "capture": ROOT / "tools/verification/capture_lerobot_frame.py",
     },
@@ -46,7 +47,7 @@ _HELP = """FlowEdge maintainer CLI (checkout only; not shipped in the runtime wh
 groups:
   bench      policy | mix | budgets | hybrid | artifact
   verify     ulp | diffusion | head | diffusion-public | smolvla | transformer | delivery
-  pipeline   convert | inspect | package | rollout | capture
+  pipeline   convert | inspect | package | preflight | rollout | capture
 
 Everyday:
   python -m flowedge_dev bench policy <checkpoint> --source ... --revision ... --output ...
@@ -54,6 +55,7 @@ Everyday:
   python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetensors
   python -m flowedge_dev pipeline convert <src> <dst> --arch mamba|diffusion|transformer
   python -m flowedge_dev pipeline package <converted> <source> <output>
+  python -m flowedge_dev pipeline preflight <package> --output preflight.json
 """
 
 
