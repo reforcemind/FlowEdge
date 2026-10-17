@@ -14,6 +14,7 @@ PACKAGE_SCHEMA = 1
 NATIVE_CHECKPOINT = "flowedge_model.safetensors"
 SOURCE_DIRECTORY = "source"
 SOURCE_MANIFEST = "flowedge-source.json"
+PACKAGE_MANIFEST = "flowedge-package.json"
 
 
 def _sha256(path: Path) -> str:
@@ -106,6 +107,81 @@ def _resolve_source_directory(
             local_files_only=local_files_only,
         )
     )
+
+
+def validate_deployment_package(
+    reference: str | Path,
+    *,
+    revision: str | None = None,
+    cache_dir: str | Path | None = None,
+    force_download: bool = False,
+    token: str | bool | None = None,
+    local_files_only: bool = False,
+) -> dict:
+    """Resolve and verify a portable FlowEdge policy package.
+
+    This intentionally hashes the large native checkpoint. Keep it on explicit
+    preflight and packaging paths rather than every policy load.
+    """
+
+    from flowedge_lerobot.observation import validate_source_pair
+
+    root = _resolve_bundle_root(
+        reference,
+        revision=revision,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        token=token,
+        local_files_only=local_files_only,
+    )
+    manifest_path = root / PACKAGE_MANIFEST
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"deployment package is missing {PACKAGE_MANIFEST}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != PACKAGE_SCHEMA:
+        raise ValueError("unsupported FlowEdge deployment package schema")
+    if manifest.get("policy_type") != "flowedge":
+        raise ValueError("deployment package must contain a FlowEdge policy")
+
+    config_path = root / "config.json"
+    if not config_path.is_file():
+        raise FileNotFoundError("deployment package is missing config.json")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("type") != "flowedge" or config.get("input_mode") != "visual":
+        raise ValueError("deployment config must describe a visual FlowEdge policy")
+
+    checkpoint = Path(_resolve_native_checkpoint(root, config["checkpoint_path"]))
+    if _sha256(checkpoint) != manifest.get("converted_sha256"):
+        raise ValueError("native checkpoint integrity mismatch")
+    source = Path(
+        _resolve_source_directory(
+            root,
+            config["source_checkpoint_path"],
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            token=token,
+            local_files_only=local_files_only,
+        )
+    )
+    if not source.is_relative_to(root):
+        raise ValueError("deployment source directory must stay inside the package")
+    identity = validate_source_pair(checkpoint, source)
+    if (
+        identity["source_sha256"] != manifest.get("source_original_sha256")
+        or identity["source_config_sha256"]
+        != manifest.get("source_config_sha256")
+        or _sha256(source / "model.safetensors")
+        != manifest.get("source_encoder_sha256")
+    ):
+        raise ValueError("deployment source integrity mismatch")
+    return {
+        "root": root,
+        "manifest": manifest,
+        "config": config,
+        "checkpoint": checkpoint,
+        "source": source,
+    }
 
 
 def load_deployment_policy(
@@ -305,7 +381,7 @@ def create_deployment_package(
             "default_device": "cpu",
             "default_precision": "exact-f32",
         }
-        (package / "flowedge-package.json").write_text(
+        (package / PACKAGE_MANIFEST).write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
         (package / "README.md").write_text(
@@ -325,6 +401,7 @@ def create_deployment_package(
             "Start with the robot unloaded and a short duration.\n",
             encoding="utf-8",
         )
+        validate_deployment_package(package)
         package.replace(output)
     return manifest
 

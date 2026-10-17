@@ -63,6 +63,19 @@ or downloading it from the Hub; a Hugging Face model repo ID can be passed
 directly as `--policy.path`. Commission with an unloaded arm and a short duration;
 limits and emergency stop remain LeRobot responsibilities.
 
+Run a no-robot preflight after copying the package to the deployment machine:
+
+```bash
+python -m flowedge_dev pipeline preflight deploy/my_so101_flowedge \
+  --iterations 5 --output flowedge-preflight.json
+```
+
+The installed-wheel equivalent is `flowedge-lerobot-preflight`. It verifies
+package hashes, loads the registered plugin, and runs synthetic RGB/state input
+through preprocessing, the encoder, and a fresh native action chunk. Its JSON
+records the feature contract, backend, CUDA residency, startup/RSS, and latency.
+This is a deployment diagnostic, not camera, safety, or task-success evidence.
+
 ## Period loop (sim and Jetson smoke)
 
 ```bash
