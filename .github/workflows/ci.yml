@@ -63,6 +63,7 @@ jobs:
         run: |
           pip install --no-deps -e integrations/lerobot
           flowedge-lerobot-rollout --help
+          flowedge-lerobot-preflight --help
 
   arm64-neon:
     name: ARM64/NEON validation
@@ -154,6 +155,7 @@ jobs:
           flowedge-lerobot-benchmark --help
           flowedge-lerobot-evaluate --help
           flowedge-lerobot-package --help
+          flowedge-lerobot-preflight --help
           lerobot-rollout --help
 
   docker:

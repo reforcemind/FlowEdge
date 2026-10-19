@@ -13,6 +13,7 @@ from flowedge_lerobot.deployment import (
     _resolve_native_checkpoint,
     _sha256,
     create_deployment_package,
+    validate_deployment_package,
 )
 
 
@@ -152,6 +153,14 @@ class DeploymentPackageTests(unittest.TestCase):
             ) as weights:
                 self.assertIn("diffusion.rgb_encoder.fixture", weights.keys())
                 self.assertNotIn("diffusion.unet.fixture", weights.keys())
+            validated = validate_deployment_package(output)
+            self.assertEqual(validated["root"], output.resolve())
+            self.assertEqual(validated["manifest"], manifest)
+
+            with (output / NATIVE_CHECKPOINT).open("ab") as stream:
+                stream.write(b"tampered")
+            with self.assertRaisesRegex(ValueError, "checkpoint integrity"):
+                validate_deployment_package(output)
 
 
 if __name__ == "__main__":
