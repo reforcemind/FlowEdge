@@ -714,27 +714,6 @@ def compare() -> None:
     s.write()
 
 
-def vs_tools() -> None:
-    s = Scene("vs-tools", 980, 360, "without FlowEdge  vs  with FlowEdge")
-    s.box(36, 70, 280, 230, PINK, "")
-    s.caption(176, 108, "Keep PyTorch", size=20, anchor="middle")
-    s.lines(176, 142, ["train + encode RGB", "malloc after warmup", "you invent --on-miss", "KV cache can grow"], size=14)
-    s.caption(176, 248, "right for training", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.box(350, 70, 280, 230, SUN, "")
-    s.caption(490, 108, "ONNX / TRT / ET", size=20, anchor="middle")
-    s.lines(490, 142, ["general graph", "any opset that fits", "RSS is the compiler's", "measure on your board"], size=14)
-    s.caption(490, 248, "not this miss contract", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.box(664, 70, 280, 230, TEAL, "")
-    s.caption(804, 108, "FlowEdge Core", size=20, anchor="middle")
-    s.lines(804, 142, ["this flow or DP head", "arena sized at load", "--on-miss hold|drop|raise", "encoder stays outside"], size=14)
-    s.caption(804, 248, "right for the period", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.caption(490, 330, "same checkpoint in, action chunk out  ·  only DP has a published p50 vs PyTorch", size=14, anchor="middle")
-    s.write()
-
-
 def vs_arch() -> None:
     s = Scene("vs-arch", 980, 280, "same checkpoint, two engines")
     s.box(50, 70, 420, 150, TEAL, "")
@@ -780,30 +759,6 @@ def policies() -> None:
     )
 
     s.caption(490, 310, "same arena, same miss contract  ·  pick the head you trained", size=14, anchor="middle")
-    s.write()
-
-
-def why_this() -> None:
-    s = Scene("why-this", 980, 570, "why this, not the usual stack")
-    rows = [
-        (PINK, "PyTorch / LeRobot|as the robot runtime", TEAL, "same checkpoint|arena, kernels, --on-miss"),
-        (SUN, "TensorRT / ONNX / ET|general graphs", GREEN, "this flow or DP head|RSS known at load"),
-        (CORAL, "Transformer KV cache|grows with the horizon", TEAL, "Mamba SSM state|constant in time"),
-        (ORANGE, "dozens of DDIM steps|on the hot path", PURPLE, "short flow ODE|DP if you trained it"),
-        (PINK, "model servers|throughput / queues", GREEN, "newest valid action|before the deadline"),
-    ]
-    y = 72
-    for left_fill, left, right_fill, right in rows:
-        s.box(36, y, 380, 70, left_fill, left, size=16)
-        s.arrow(428, y + 35, 534, y + 35, color=NAVY)
-        s.box(544, y, 400, 70, right_fill, right, size=16)
-        y += 78
-
-    s.note(36, 472, "not a trainer", fill=CREAM)
-    s.note(248, 472, "not a graph compiler", fill=CREAM)
-    s.note(532, 472, "not a safety controller", fill=SUN)
-    s.doodle_clock(910, 490, 18)
-    s.caption(490, 540, "DP p50   851 vs 1409 ms    threads=1    CPU    not a 10 ms loop", size=14, anchor="middle")
     s.write()
 
 
@@ -863,19 +818,15 @@ def _fonts():
         ("C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf"),
     ):
         try:
-            from PIL import ImageFont as F
-
             return (
-                F.truetype(bold, 26),
-                F.truetype(regular, 20),
-                F.truetype(regular, 15),
-                F.truetype(bold, 22),
+                ImageFont.truetype(bold, 26),
+                ImageFont.truetype(regular, 20),
+                ImageFont.truetype(regular, 15),
+                ImageFont.truetype(bold, 22),
             )
         except OSError:
             continue
-    from PIL import ImageFont as F
-
-    d = F.load_default()
+    d = ImageFont.load_default()
     return d, d, d, d
 
 
@@ -1047,10 +998,8 @@ def main() -> None:
         matrix,
         status,
         compare,
-        vs_tools,
         vs_arch,
         policies,
-        why_this,
         big_flow,
     ):
         fn()

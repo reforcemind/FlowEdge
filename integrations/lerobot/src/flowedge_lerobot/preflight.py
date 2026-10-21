@@ -49,13 +49,16 @@ def _feature_contract(features) -> dict[str, dict[str, object]]:
     return result
 
 
-def _synthetic_observation(config):
+def _synthetic_observation(config, task: str | None = None):
     import torch
 
-    return {
+    observation = {
         name: torch.zeros(tuple(feature.shape), dtype=torch.float32)
         for name, feature in config.input_features.items()
     }
+    if task is not None:
+        observation["task"] = task
+    return observation
 
 
 def _percentile(samples: list[float], percentile: float) -> float:
@@ -83,10 +86,12 @@ def _synchronize(device: str) -> None:
     torch.cuda.synchronize()
 
 
-def _exercise(policy, preprocessor, *, warmup: int, iterations: int) -> dict:
+def _exercise(
+    policy, preprocessor, *, warmup: int, iterations: int, task: str | None = None
+) -> dict:
     import torch
 
-    raw = _synthetic_observation(policy.config)
+    raw = _synthetic_observation(policy.config, task)
     preprocess_ms = []
     action_chunk_ms = []
     end_to_end_ms = []
@@ -130,6 +135,7 @@ def run_preflight(
     precision: str = "exact-f32",
     warmup: int = 1,
     iterations: int = 3,
+    task: str = "move the object",
 ) -> dict:
     """Verify a package and run its complete synthetic visual action path."""
 
@@ -148,6 +154,13 @@ def run_preflight(
     integrity_started = time.perf_counter()
     package = validate_deployment_package(reference)
     integrity_ms = (time.perf_counter() - integrity_started) * 1_000
+    policy_type = package["manifest"]["policy_type"]
+    if policy_type == "flowedge_smolvla" and (
+        device != "cpu" or precision != "exact-f32"
+    ):
+        raise ValueError(
+            "SmolVLA preflight currently requires device=cpu and exact-f32"
+        )
 
     # Importing the plugin registers both configuration types with LeRobot.
     import flowedge
@@ -157,35 +170,50 @@ def run_preflight(
     from lerobot.policies.factory import get_policy_class
     from lerobot_policy_flowedge.processor_flowedge import (
         make_flowedge_pre_post_processors,
+        make_flowedge_smolvla_pre_post_processors,
     )
 
     config = PreTrainedConfig.from_pretrained(package["root"])
-    if config.type != "flowedge":
-        raise ValueError("preflight currently supports packaged FlowEdge Diffusion Policy")
+    if config.type != policy_type:
+        raise ValueError("preflight policy type disagrees with package")
     config.device = device
-    config.diffusion_precision = precision
+    if policy_type == "flowedge":
+        config.diffusion_precision = precision
     load_started = time.perf_counter()
     policy = get_policy_class(config.type).from_pretrained(
         package["root"], config=config
     )
-    preprocessor, _ = make_flowedge_pre_post_processors(policy.config)
+    processor_factory = (
+        make_flowedge_pre_post_processors
+        if policy_type == "flowedge"
+        else make_flowedge_smolvla_pre_post_processors
+    )
+    preprocessor, _ = processor_factory(policy.config)
     load_ms = (time.perf_counter() - load_started) * 1_000
     startup_ms = (time.perf_counter() - preflight_started) * 1_000
     timings = _exercise(
-        policy, preprocessor, warmup=warmup, iterations=iterations
+        policy,
+        preprocessor,
+        warmup=warmup,
+        iterations=iterations,
+        task=task if policy_type == "flowedge_smolvla" else None,
     )
-    engine = policy._policy
+    engine = policy._policy if policy_type == "flowedge" else policy._expert._engine
     cuda_requested = device.startswith("cuda")
     native_resident = bool(getattr(engine, "cuda_resident", False))
     if cuda_requested and not native_resident:
-        raise RuntimeError("CUDA was requested but native policy weights are not resident")
+        raise RuntimeError(
+            "CUDA was requested but native policy weights are not resident"
+        )
 
     return {
         "schema_version": 1,
         "status": "pass",
         "scope": "synthetic_visual_policy_preflight_no_robot",
         "package": {
-            "reference": Path(reference).name if Path(reference).exists() else str(reference),
+            "reference": Path(reference).name
+            if Path(reference).exists()
+            else str(reference),
             "manifest": package["manifest"],
             "integrity_ms": integrity_ms,
         },
@@ -198,6 +226,9 @@ def run_preflight(
         "execution": {
             "requested_device": device,
             "resolved_device": str(policy.config.device),
+            "native_expert_backend": "cpu"
+            if policy_type == "flowedge_smolvla"
+            else device,
             "requested_precision": precision,
             "resolved_precision": str(getattr(engine, "precision", precision)),
             "flowedge_cuda_build": bool(getattr(flowedge, "cuda", False)),
@@ -226,7 +257,9 @@ def _parser() -> argparse.ArgumentParser:
             "without a robot."
         ),
     )
-    parser.add_argument("policy", help="local package directory or Hugging Face repo ID")
+    parser.add_argument(
+        "policy", help="local package directory or Hugging Face repo ID"
+    )
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(
         "--precision",
@@ -235,6 +268,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--iterations", type=int, default=3)
+    parser.add_argument(
+        "--task",
+        default="move the object",
+        help="synthetic language instruction for SmolVLA",
+    )
     parser.add_argument("--output", type=Path)
     return parser
 
@@ -258,6 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             precision=args.precision,
             warmup=args.warmup,
             iterations=args.iterations,
+            task=args.task,
         )
     except Exception as error:
         report = {

@@ -1,7 +1,9 @@
 """Small, deployment-only adapters between LeRobot and FlowEdge."""
 
 from .contracts import ActionChunkAdapter
+from .deployment import package_policy
 from .diffusion import DiffusionActionContract, FlowEdgeDiffusionPolicy
+from .policy import LoadedPolicy, load_policy
 from .rollout import (
     MAX_ROLLOUT_STEPS,
     DeadlineMissed,
@@ -21,6 +23,7 @@ __all__ = [
     "DeadlineMissed",
     "DiffusionActionContract",
     "FlowEdgeDiffusionPolicy",
+    "LoadedPolicy",
     "FlowEdgeSmolVLACachedExpert",
     "LeRobotSmolVLACacheProvider",
     "MAX_ROLLOUT_STEPS",
@@ -29,4 +32,6 @@ __all__ = [
     "SmolVLAActionContract",
     "SmolVLAKVCache",
     "run_rollout",
+    "load_policy",
+    "package_policy",
 ]

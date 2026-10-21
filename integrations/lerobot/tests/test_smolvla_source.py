@@ -2,7 +2,6 @@ import importlib.util
 import unittest
 
 import numpy as np
-
 from flowedge_lerobot import LeRobotSmolVLACacheProvider
 
 
@@ -11,6 +10,41 @@ from flowedge_lerobot import LeRobotSmolVLACacheProvider
     "requires torch and LeRobot",
 )
 class SmolVLASourceProviderTests(unittest.TestCase):
+    def test_releasing_source_expert_keeps_prefix_model(self):
+        from types import SimpleNamespace
+
+        import torch
+
+        class Bridge(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.vlm = torch.nn.Linear(2, 2)
+                self.lm_expert = torch.nn.Module()
+                self.lm_expert.layers = torch.nn.ModuleList(
+                    [torch.nn.Linear(2, 2) for _ in range(3)]
+                )
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.vlm_with_expert = Bridge()
+                self.action_in_proj = torch.nn.Linear(2, 2)
+                self.action_out_proj = torch.nn.Linear(2, 2)
+                self.action_time_mlp_in = torch.nn.Linear(2, 2)
+                self.action_time_mlp_out = torch.nn.Linear(2, 2)
+                self.state_proj = torch.nn.Linear(2, 2)
+
+        source = SimpleNamespace(model=Model())
+        prefix = source.model.vlm_with_expert.vlm
+        state = source.model.state_proj
+        before = sum(p.numel() for p in source.model.parameters())
+        LeRobotSmolVLACacheProvider.release_source_expert(source)
+        self.assertIs(source.model.vlm_with_expert.vlm, prefix)
+        self.assertIs(source.model.state_proj, state)
+        self.assertEqual(source.model.vlm_with_expert.lm_expert.layers, [None] * 3)
+        self.assertIsNone(source.model.action_in_proj)
+        self.assertLess(sum(p.numel() for p in source.model.parameters()), before)
+
     def test_provider_replays_source_prefix_and_flattens_cache(self):
         import torch
 
@@ -22,7 +56,13 @@ class SmolVLASourceProviderTests(unittest.TestCase):
                     torch.equal(
                         kwargs["attention_mask"],
                         torch.tensor(
-                            [[[True, False, True], [False, False, False], [True, False, True]]]
+                            [
+                                [
+                                    [True, False, True],
+                                    [False, False, False],
+                                    [True, False, True],
+                                ]
+                            ]
                         ),
                     )
                 )

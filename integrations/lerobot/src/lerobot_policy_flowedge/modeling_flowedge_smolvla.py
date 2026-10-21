@@ -1,11 +1,11 @@
 """LeRobot policy wrapper for the native SmolVLA action expert."""
 
+from pathlib import Path
+
 import numpy as np
 import torch
-
-from lerobot.policies.pretrained import PreTrainedPolicy
-
 from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, LeRobotSmolVLACacheProvider
+from lerobot.policies.pretrained import PreTrainedPolicy
 
 from .configuration_flowedge import FlowEdgeSmolVLAConfig
 
@@ -49,9 +49,25 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
         if action_dim != expert.action_dim:
             raise ValueError("action feature disagrees with the native expert")
         if cache_provider is None:
+            from lerobot.configs.policies import PreTrainedConfig
             from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-            source = SmolVLAPolicy.from_pretrained(config.source_checkpoint_path)
+            # A portable package contains VLM weights only. The source policy
+            # constructs its expert briefly, then the provider releases it.
+            source_config = PreTrainedConfig.from_pretrained(
+                config.source_checkpoint_path
+            )
+            if source_config.type != "smolvla":
+                raise ValueError("source checkpoint must contain a SmolVLA policy")
+            source_config.device = device
+            source_config.load_vlm_weights = False
+            bundled_vlm = Path(config.source_checkpoint_path) / "vlm_assets"
+            if bundled_vlm.is_dir():
+                source_config.vlm_model_name = str(bundled_vlm)
+            source = SmolVLAPolicy.from_pretrained(
+                config.source_checkpoint_path, config=source_config, strict=False
+            )
+            LeRobotSmolVLACacheProvider.release_source_expert(source)
             source.to(device)
             cache_provider = LeRobotSmolVLACacheProvider(
                 source, expert_layers=expert.contract.expert_layers
