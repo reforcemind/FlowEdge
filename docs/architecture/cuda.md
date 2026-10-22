@@ -20,7 +20,7 @@ FP32 accumulation/output. Five alternating native 10-step trials measured 104.21
 82.620 ms approximate (20.7% lower); matched PushT seeds 7–16 remained 8/10 successful in both
 modes, with mean maximum reward 0.998138 exact versus 0.998099 approximate. This is simulation and
 GTX 1650 evidence, not SO-101 or Jetson evidence. See the
-{download}`raw artifact <../../bench/artifacts/policy/cuda-fp16-deep-2026-10-15/README.md>`.
+{download}`raw artifact <../../tools/benchmark/artifacts/policy/cuda-fp16-deep-2026-10-15/README.md>`.
 
 The **Mamba backbone**, **flow head**, and **Diffusion Policy head** are
 device-resident. `Mamba` uploads `backbone.*` weights and layer scratch once at
@@ -51,7 +51,7 @@ bias; timestep input also fuses Mish. This removes 150 launches from a 10-step s
 isolates those shapes and, with a checkpoint, prints a launch census for one
 native 10-step DDIM.
 The {download}`launch-fusion artifact
-<../../bench/artifacts/policy/cuda-launch-fusion-2026-10-15/README.md>` contains the end-to-end
+<../../tools/benchmark/artifacts/policy/cuda-launch-fusion-2026-10-15/README.md>` contains the end-to-end
 confirmation; the previously tested full CUDA Graph doubled latency and remains rejected in issue
 #181.
 See [#174](https://github.com/reforcemind/FlowEdge/issues/174),
@@ -72,10 +72,10 @@ PYTHONPATH=build-cuda python tools/verification/benchmark_cuda_tensor_boundary.p
 
 Same checkpoint, same noise: compare those binaries to CPU `flow_sample` /
 `diffusion_sample`. Matched full-policy CUDA vs PyTorch CUDA on GTX 1650 is
-{download}`diffusion-pusht-cuda-replay.md <../../bench/artifacts/policy/diffusion-pusht-cuda-replay.md>`:
+{download}`diffusion-pusht-cuda-replay.md <../../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.md>`:
 policy p50 131 ms vs 345 ms, max abs 7.63e-5, same CPU observation file.
 The LeRobot CUDA period log is
-{download}`diffusion-pusht-cuda-period10-hold.md <../../bench/artifacts/policy/diffusion-pusht-cuda-period10-hold.md>`:
+{download}`diffusion-pusht-cuda-period10-hold.md <../../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-period10-hold.md>`:
 10 ms hold missed 20 / 20 (step p50 589 ms). Not TensorRT/ONNX. Not Jetson/ARM.
 
 WSL2, nvcc 12.0, GTX 1650 (`sm_75`): `FlowHead.*`, `DiffusionHead.*`, and

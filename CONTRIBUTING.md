@@ -73,8 +73,8 @@ ctest --test-dir build --output-on-failure
 1. **Fork the repository** and create a branch from `main`.
 2. **Keep the PR focused** on one logical change.
 3. **Build and run the tests** before submitting. Parity (ULP, convert,
-   diffusion python) is local: Grok Bot runs `scripts/verify_all.sh` or
-   `scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
+   diffusion python) is local: Grok Bot runs `tools/scripts/verify_all.sh` or
+   `tools/scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
 4. **Follow the existing C++ style** and formatting conventions.
 5. **Add or update tests** for changed behavior.
 6. **Link the relevant issue** when applicable.

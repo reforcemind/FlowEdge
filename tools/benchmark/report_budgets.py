@@ -80,7 +80,7 @@ def main() -> int:
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--token", type=int, action="append", required=True)
-    parser.add_argument("--budget", type=Path, default=Path("bench/config/budgets.json"))
+    parser.add_argument("--budget", type=Path, default=Path("tools/benchmark/config/budgets.json"))
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 

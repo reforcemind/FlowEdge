@@ -31,7 +31,7 @@ jobs:
             --benchmark_format=json \
             --benchmark_out=bench-cpu.json
       - name: Job summary
-        run: python scripts/bench_summary.py bench-cpu.json "CPU kernels" >> "$GITHUB_STEP_SUMMARY"
+        run: python tools/scripts/bench_summary.py bench-cpu.json "CPU kernels" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: bench-cpu-json
@@ -75,7 +75,7 @@ jobs:
             --benchmark_out=bench-gpu.json
       - name: GPU job summary
         if: steps.gpu.outputs.present == 'true'
-        run: python scripts/bench_summary.py bench-gpu.json "GPU kernels" >> "$GITHUB_STEP_SUMMARY"
+        run: python tools/scripts/bench_summary.py bench-gpu.json "GPU kernels" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: steps.gpu.outputs.present == 'true'
         with:

@@ -16,7 +16,7 @@ cmake -S . -B build-relay -DCMAKE_BUILD_TYPE=Release \
   -DFLOWEDGE_RELAY=ON
 cmake --build build-relay --config Release -j
 FLOWEDGE_BUILD_DIR="$PWD/build-relay" \
-  ./scripts/job_demo.sh models/mamba_flow.safetensors
+  ./tools/scripts/job_demo.sh models/mamba_flow.safetensors
 ```
 
 The script submits interactive and critical streams, drains and resumes one lane, validates traces

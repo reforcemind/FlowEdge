@@ -114,6 +114,7 @@ class PolicyAPITests(unittest.TestCase):
             "root": "cached-package",
         }
         options = {
+            "verify_integrity": True,
             "revision": "0123456789abcdef",
             "cache_dir": "cache",
             "force_download": True,

@@ -9,7 +9,14 @@ from pathlib import Path
 from tools.benchmark import benchmark_artifact
 
 ROOT = Path(__file__).parents[1]
-TEMPLATE = ROOT / "bench" / "artifacts" / "policy" / "lerobot-vs-flowedge.template.json"
+TEMPLATE = (
+    ROOT
+    / "tools"
+    / "benchmark"
+    / "artifacts"
+    / "policy"
+    / "lerobot-vs-flowedge.template.json"
+)
 
 
 def measured():
@@ -30,8 +37,8 @@ def measured():
 
 class BenchmarkArtifactTest(unittest.TestCase):
     def test_size_budget_rebaseline_is_auditable(self):
-        budgets = json.loads((ROOT / "bench/config/budgets.json").read_text())
-        baseline = json.loads((ROOT / "bench/config/budget-baseline.json").read_text())
+        budgets = json.loads((ROOT / "tools/benchmark/config/budgets.json").read_text())
+        baseline = json.loads((ROOT / "tools/benchmark/config/budget-baseline.json").read_text())
         self.assertEqual(budgets["version"], 1)
         self.assertEqual(baseline["schema"], 1)
         self.assertEqual(

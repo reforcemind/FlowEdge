@@ -32,13 +32,13 @@ commands.
 Linux / Git Bash (Grok Bot local execution):
 
 ```bash
-./scripts/verify_all.sh models/mamba_flow.safetensors
+./tools/scripts/verify_all.sh models/mamba_flow.safetensors
 ```
 
 Windows PowerShell against `build-win-clang`:
 
 ```powershell
-powershell -File scripts/verify_local.ps1 -BuildDir build-win-clang
+powershell -File tools/scripts/verify_local.ps1 -BuildDir build-win-clang
 ```
 
 The script builds Core, Relay, tests, benchmarks, every C++ example, generic-job JSONL inspection,
@@ -63,10 +63,10 @@ GitHub Actions also runs `.github/workflows/bench.yml` for short CPU kernel JSON
 | CUDA DP mix | `./build-cuda/flowedge_cuda_dp_mix models/diffusion_pusht.flowedge.safetensors` |
 | Policy vs LeRobot | `python -m flowedge_dev bench policy ...` |
 | Period rollout | `python -m flowedge_dev pipeline rollout ...` |
-| Relay lifecycle | `FLOWEDGE_BUILD_DIR=build ./scripts/relay_demo.sh models/mamba_flow.safetensors` |
-| Formatting/static analysis | `FLOWEDGE_BUILD_DIR=build ./scripts/lint.sh` |
-| Benchmarks | `FLOWEDGE_BUILD_DIR=build ./scripts/bench.sh` |
-| Relay benchmarks | `FLOWEDGE_BUILD_DIR=build ./scripts/relay_bench.sh` |
+| Relay lifecycle | `FLOWEDGE_BUILD_DIR=build ./tools/scripts/relay_demo.sh models/mamba_flow.safetensors` |
+| Formatting/static analysis | `FLOWEDGE_BUILD_DIR=build ./tools/scripts/lint.sh` |
+| Benchmarks | `FLOWEDGE_BUILD_DIR=build ./tools/scripts/bench.sh` |
+| Relay benchmarks | `FLOWEDGE_BUILD_DIR=build ./tools/scripts/relay_bench.sh` |
 | QoS overload | `./build/flowedge_job_qos_bench 1000000` |
 
 ## Key invariants
@@ -115,7 +115,7 @@ policy replay vs PyTorch; max abs must stay within the existing 1e-3 gate.
 ./build-cuda/flowedge_cuda_dp_mix models/diffusion_pusht.flowedge.safetensors
 python -m flowedge_dev bench policy models/diffusion_pusht.flowedge.safetensors \
   --source models/diffusion_pusht --device cuda --build-dir /path/to/cuda-build \
-  --observations bench/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz
+  --observations tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz
 ```
 
 Do not retry L=16 conv split-K without a new launch shape; it lost twice.

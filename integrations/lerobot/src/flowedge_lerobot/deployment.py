@@ -9,7 +9,7 @@ import os
 import shutil
 import tempfile
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 PACKAGE_SCHEMA = 1
 NATIVE_CHECKPOINT = "flowedge_model.safetensors"
@@ -39,9 +39,9 @@ def _hub_blob_directory(snapshot_root: Path) -> Path | None:
     return blobs.resolve() if blobs.is_dir() else None
 
 
-def _asset_file_hashes(
+def _asset_file_paths(
     directory: Path, *, allowed_blob_root: Path | None = None
-) -> dict[str, str]:
+) -> dict[str, Path]:
     directory = directory.resolve()
     files = {}
     for path in sorted(directory.rglob("*")):
@@ -56,10 +56,19 @@ def _asset_file_hashes(
                     "VLM asset symlinks must target files in the Hugging Face blob store"
                 )
         if path.is_file():
-            files[str(path.relative_to(directory)).replace("\\", "/")] = _sha256(
-                path
-            )
+            files[str(path.relative_to(directory)).replace("\\", "/")] = path
     return files
+
+
+def _asset_file_hashes(
+    directory: Path, *, allowed_blob_root: Path | None = None
+) -> dict[str, str]:
+    return {
+        relative: _sha256(path)
+        for relative, path in _asset_file_paths(
+            directory, allowed_blob_root=allowed_blob_root
+        ).items()
+    }
 
 
 def _asset_bundle_sha256(files: dict[str, str]) -> str:
@@ -80,7 +89,11 @@ def _config_sha256(config: dict) -> str:
 def _inside(root: Path, path: Path, label: str) -> Path:
     root = root.resolve()
     candidate = Path(os.path.abspath(path))
-    if not candidate.is_relative_to(root):
+    # Resolve the parent first: on Windows the temp directory can be reached
+    # through an 8.3 alias (RUNNER~1), while ``root`` is already canonicalized.
+    # Do not resolve the final component until after checking its parent so a
+    # Hugging Face snapshot file may safely symlink into the sibling blob store.
+    if not candidate.parent.resolve().is_relative_to(root):
         raise ValueError(f"{label} must stay inside the deployment package")
     resolved = candidate.resolve()
     blob_root = _hub_blob_directory(root)
@@ -89,6 +102,21 @@ def _inside(root: Path, path: Path, label: str) -> Path:
     ):
         raise ValueError(f"{label} must stay inside the deployment package")
     return resolved
+
+
+def _package_relative_path(value: str, label: str) -> Path:
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a relative path string")
+    relative = Path(value)
+    windows_relative = PureWindowsPath(value)
+    if (
+        relative.anchor
+        or windows_relative.anchor
+        or ".." in relative.parts
+        or ".." in windows_relative.parts
+    ):
+        raise ValueError(f"{label} must stay inside the deployment package")
+    return relative
 
 
 def _resolve_bundle_root(
@@ -100,9 +128,18 @@ def _resolve_bundle_root(
     token: str | bool | None,
     local_files_only: bool,
 ) -> Path:
-    local = Path(reference)
+    reference_text = str(reference)
+    local = Path(reference_text).expanduser()
     if local.is_dir():
         return local.resolve()
+    if (
+        isinstance(reference, Path)
+        or reference_text.startswith(("~", "./", "../"))
+        or local.is_absolute()
+        or PureWindowsPath(reference_text).anchor
+        or "\\" in reference_text
+    ):
+        raise FileNotFoundError(f"deployment package directory not found: {local}")
     from huggingface_hub import snapshot_download
 
     return Path(
@@ -162,6 +199,7 @@ def _resolve_source_directory(
 def validate_deployment_package(
     reference: str | Path,
     *,
+    verify_integrity: bool = True,
     revision: str | None = None,
     cache_dir: str | Path | None = None,
     force_download: bool = False,
@@ -170,11 +208,10 @@ def validate_deployment_package(
 ) -> dict:
     """Resolve and verify a portable FlowEdge policy package.
 
-    This intentionally hashes the large native checkpoint. Keep it on explicit
-    preflight and packaging paths rather than every policy load.
+    ``verify_integrity=False`` checks package structure, file presence, and path
+    confinement without rereading large tensor files to hash them. Full hashing
+    is enabled by default; policy loading opts out to avoid a redundant read.
     """
-
-    from flowedge_lerobot.observation import validate_source_pair
 
     root = _resolve_bundle_root(
         reference,
@@ -191,7 +228,9 @@ def validate_deployment_package(
     if manifest.get("schema") != PACKAGE_SCHEMA:
         raise ValueError("unsupported FlowEdge deployment package schema")
     if manifest.get("policy_type") == "flowedge_smolvla":
-        return _validate_smolvla_package(root, manifest)
+        return _validate_smolvla_package(
+            root, manifest, verify_integrity=verify_integrity
+        )
     if manifest.get("policy_type") != "flowedge":
         raise ValueError("deployment package must contain a FlowEdge policy")
 
@@ -202,27 +241,31 @@ def validate_deployment_package(
     if config.get("type") != "flowedge" or config.get("input_mode") != "visual":
         raise ValueError("deployment config must describe a visual FlowEdge policy")
 
-    checkpoint = Path(_resolve_native_checkpoint(root, config["checkpoint_path"]))
-    if _sha256(checkpoint) != manifest.get("converted_sha256"):
-        raise ValueError("native checkpoint integrity mismatch")
-    source = Path(
-        _resolve_source_directory(
-            root,
-            config["source_checkpoint_path"],
-            revision=revision,
-            cache_dir=cache_dir,
-            force_download=force_download,
-            token=token,
-            local_files_only=local_files_only,
-        )
+    checkpoint_relative = _package_relative_path(
+        config.get("checkpoint_path"), "checkpoint_path"
     )
-    if not source.is_relative_to(root):
-        raise ValueError("deployment source directory must stay inside the package")
-    identity = validate_source_pair(checkpoint, source)
+    checkpoint = _inside(
+        root, root / checkpoint_relative, "checkpoint_path"
+    )
+    if not checkpoint.is_file():
+        raise FileNotFoundError("deployment package is missing its native checkpoint")
+    if verify_integrity and _sha256(checkpoint) != manifest.get("converted_sha256"):
+        raise ValueError("native checkpoint integrity mismatch")
+    source_relative = _package_relative_path(
+        config.get("source_checkpoint_path"), "source_checkpoint_path"
+    )
+    source = _inside(root, root / source_relative, "source_checkpoint_path")
+    if not source.is_dir():
+        raise FileNotFoundError("deployment package is missing its source directory")
+    from flowedge_lerobot.observation import validate_source_pair
+
+    identity = validate_source_pair(
+        checkpoint, source, verify_weights=verify_integrity
+    )
     if (
         identity["source_sha256"] != manifest.get("source_original_sha256")
         or identity["source_config_sha256"] != manifest.get("source_config_sha256")
-        or _sha256(source / "model.safetensors")
+        or identity["source_encoder_sha256"]
         != manifest.get("source_encoder_sha256")
     ):
         raise ValueError("deployment source integrity mismatch")
@@ -232,19 +275,32 @@ def validate_deployment_package(
         "config": config,
         "checkpoint": checkpoint,
         "source": source,
+        "integrity_verified": verify_integrity,
     }
 
 
-def _validate_smolvla_package(root: Path, manifest: dict) -> dict:
+def _validate_smolvla_package(
+    root: Path, manifest: dict, *, verify_integrity: bool = True
+) -> dict:
     config_path = _inside(root, root / "config.json", "config.json")
     if not config_path.is_file():
         raise FileNotFoundError("deployment package is missing config.json")
     config = json.loads(config_path.read_text(encoding="utf-8"))
     if config.get("type") != "flowedge_smolvla":
         raise ValueError("deployment config must describe FlowEdge SmolVLA")
-    checkpoint = Path(_resolve_native_checkpoint(root, config["checkpoint_path"]))
+    checkpoint_relative = _package_relative_path(
+        config.get("checkpoint_path"), "checkpoint_path"
+    )
+    checkpoint = _inside(
+        root, root / checkpoint_relative, "checkpoint_path"
+    )
+    if not checkpoint.is_file():
+        raise FileNotFoundError("deployment package is missing its native checkpoint")
+    source_relative = _package_relative_path(
+        config.get("source_checkpoint_path"), "source_checkpoint_path"
+    )
     source = _inside(
-        root, root / config["source_checkpoint_path"], "source_checkpoint_path"
+        root, root / source_relative, "source_checkpoint_path"
     )
     if not source.is_dir():
         raise FileNotFoundError("deployment package is missing the SmolVLA source")
@@ -255,14 +311,9 @@ def _validate_smolvla_package(root: Path, manifest: dict) -> dict:
         or not asset_identity["model"]
     ):
         raise ValueError("SmolVLA package is missing its VLM asset identity")
-    asset_files = _asset_file_hashes(
+    asset_paths = _asset_file_paths(
         source / VLM_ASSETS, allowed_blob_root=_hub_blob_directory(root)
     )
-    if (
-        asset_files != asset_identity.get("files")
-        or _asset_bundle_sha256(asset_files) != asset_identity.get("sha256")
-    ):
-        raise ValueError("SmolVLA VLM asset identity mismatch")
     for required in (
         source / "model.safetensors",
         source / "config.json",
@@ -278,13 +329,30 @@ def _validate_smolvla_package(root: Path, manifest: dict) -> dict:
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ValueError("SmolVLA package has no integrity manifest")
+    asset_files = asset_identity.get("files")
+    if not isinstance(asset_files, dict) or set(asset_paths) != set(asset_files):
+        raise ValueError("SmolVLA VLM asset identity mismatch")
+    for relative, expected in asset_files.items():
+        package_name = f"{SOURCE_DIRECTORY}/{VLM_ASSETS}/{relative}"
+        if (
+            not isinstance(expected, str)
+            or len(expected) != 64
+            or any(character not in "0123456789abcdef" for character in expected)
+            or files.get(package_name) != expected
+        ):
+            raise ValueError("SmolVLA VLM asset identity mismatch")
+    if _asset_bundle_sha256(asset_files) != asset_identity.get("sha256"):
+        raise ValueError("SmolVLA VLM asset identity mismatch")
     for relative, expected in files.items():
-        path = _inside(root, root / relative, "manifest file")
-        if not path.is_file() or _sha256(path) != expected:
+        package_relative = _package_relative_path(relative, "manifest file")
+        path = _inside(root, root / package_relative, "manifest file")
+        if not path.is_file():
+            raise FileNotFoundError(f"SmolVLA package file is missing: {relative}")
+        if verify_integrity and _sha256(path) != expected:
             raise ValueError(f"SmolVLA package integrity mismatch: {relative}")
     if (
-        Path(config["checkpoint_path"]) != Path(NATIVE_CHECKPOINT)
-        or Path(config["source_checkpoint_path"]) != Path(SOURCE_DIRECTORY)
+        checkpoint_relative != Path(NATIVE_CHECKPOINT)
+        or source_relative != Path(SOURCE_DIRECTORY)
     ):
         raise ValueError("SmolVLA package paths disagree with the manifest")
     return {
@@ -293,6 +361,7 @@ def _validate_smolvla_package(root: Path, manifest: dict) -> dict:
         "config": config,
         "checkpoint": checkpoint,
         "source": source,
+        "integrity_verified": verify_integrity,
     }
 
 
@@ -389,7 +458,7 @@ def _write_encoder_checkpoint(source: Path, destination: Path) -> int:
     with safe_open(
         source / "model.safetensors", framework="pt", device="cpu"
     ) as weights:
-        for name in weights.keys():
+        for name in weights.keys():  # noqa: SIM118 - safe_open is not iterable
             if name.startswith(("diffusion.rgb_encoder.", "normalize_inputs.buffer_")):
                 tensors[name] = weights.get_tensor(name)
     if not any(name.startswith("diffusion.rgb_encoder.") for name in tensors):
@@ -406,7 +475,7 @@ def _split_smolvla_weights(source: Path, native: Path, vlm: Path) -> dict[str, i
     native_weights = {}
     vlm_weights = {}
     with safe_open(source, framework="pt", device="cpu") as weights:
-        for name in weights.keys():
+        for name in weights.keys():  # noqa: SIM118 - safe_open is not iterable
             expert = name.startswith(
                 ("model.vlm_with_expert.lm_expert.", "model.action_")
             )
@@ -577,7 +646,9 @@ def create_smolvla_deployment_package(
         (package / PACKAGE_MANIFEST).write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
-        _validate_smolvla_package(package.resolve(), manifest)
+        _validate_smolvla_package(
+            package.resolve(), manifest, verify_integrity=False
+        )
         package.replace(output)
     return manifest
 
@@ -648,7 +719,9 @@ def create_deployment_package(
         (slim_source / SOURCE_MANIFEST).write_text(
             json.dumps(source_manifest, indent=2) + "\n", encoding="utf-8"
         )
-        validate_source_pair(package / NATIVE_CHECKPOINT, slim_source)
+        validate_source_pair(
+            package / NATIVE_CHECKPOINT, slim_source, verify_weights=False
+        )
 
         config = FlowEdgeConfig(
             n_obs_steps=source_policy.n_obs_steps,
@@ -701,7 +774,7 @@ def create_deployment_package(
             "robot unloaded and a short duration.\n",
             encoding="utf-8",
         )
-        validate_deployment_package(package)
+        validate_deployment_package(package, verify_integrity=False)
         package.replace(output)
     return manifest
 
@@ -813,7 +886,9 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         vlm_revision=args.vlm_revision,
     )
-    manifest = validate_deployment_package(output)["manifest"]
+    manifest = json.loads(
+        (output / PACKAGE_MANIFEST).read_text(encoding="utf-8")
+    )
     print(json.dumps({"output": str(output), "manifest": manifest}, indent=2))
     return 0
 

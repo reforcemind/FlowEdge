@@ -1,4 +1,4 @@
-#include "bench/runtime/deadline_profile.h"
+#include "tools/benchmark/runtime/deadline_profile.h"
 #include "protocol/deadline_flow.h"
 
 #include <array>

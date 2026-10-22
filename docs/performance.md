@@ -24,11 +24,11 @@ CPU. `threads=1` is the fair compare. Lower latency is better.
 
 ## Diffusion Policy
 
-{download}`replay <../bench/artifacts/policy/diffusion-pusht-cpu-replay.md>`
-· [JSON](../bench/artifacts/policy/diffusion-pusht-cpu-replay.json)
-· {download}`threads=2 <../bench/artifacts/policy/diffusion-pusht-cpu-replay-threads2.md>`
-· {download}`threads=4 <../bench/artifacts/policy/diffusion-pusht-cpu-replay-threads4.md>`
-· {download}`period 10 ms hold <../bench/artifacts/policy/diffusion-pusht-cpu-period10-hold.md>`
+{download}`replay <../tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.md>`
+· [JSON](../tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.json)
+· {download}`threads=2 <../tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay-threads2.md>`
+· {download}`threads=4 <../tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay-threads4.md>`
+· {download}`period 10 ms hold <../tools/benchmark/artifacts/policy/diffusion-pusht-cpu-period10-hold.md>`
 
 | | FlowEdge | LeRobot / PyTorch |
 |---|---:|---:|
@@ -67,8 +67,8 @@ CPU. `threads=1` is the fair compare. Lower latency is better.
 
 NVIDIA GeForce GTX 1650 is the headline, not `threads=1`. Same observation file as the CPU replay. Not TensorRT/ONNX. Not Jetson/ARM.
 
-{download}`CUDA replay <../bench/artifacts/policy/diffusion-pusht-cuda-replay.md>`
-· [JSON](../bench/artifacts/policy/diffusion-pusht-cuda-replay.json)
+{download}`CUDA replay <../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.md>`
+· [JSON](../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.json)
 
 | | FlowEdge CUDA | PyTorch CUDA |
 |---|---:|---:|
@@ -79,8 +79,8 @@ NVIDIA GeForce GTX 1650 is the headline, not `threads=1`. Same observation file 
 
 A 4GB card cannot hold both U-Nets; the runner frees FlowEdge before loading the PyTorch U-Net. Same observation file as the CPU replay. The CPU `threads=1` 851 vs 1409 ms figure is unchanged. Not TensorRT/ONNX. Not Jetson/ARM.
 
-{download}`CUDA period 10 ms hold <../bench/artifacts/policy/diffusion-pusht-cuda-period10-hold.md>`
-· [JSON](../bench/artifacts/policy/diffusion-pusht-cuda-period10-hold.json)
+{download}`CUDA period 10 ms hold <../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-period10-hold.md>`
+· [JSON](../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-period10-hold.json)
 
 | Period | On miss | Misses | Step p50 / p99 / max |
 |---|---|---:|---|
@@ -160,9 +160,9 @@ CUDA matched replay (WSL, `FLOWEDGE_BACKEND=cuda`, PyTorch CUDA):
 python -m flowedge_dev bench policy models/diffusion_pusht.flowedge.safetensors \
   --source models/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 \
   --steps 10 --iterations 10 --warmup 2 --threads 1 --device cuda \
-  --observations bench/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz \
+  --observations tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz \
   --build-dir /path/to/cuda-build \
-  --output bench/artifacts/policy/diffusion-pusht-cuda-replay.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.json
 ```
 
 CUDA Core period loop (same `--on-miss` contract; miss counts, not a policy p50):
@@ -170,7 +170,7 @@ CUDA Core period loop (same `--on-miss` contract; miss counts, not a policy p50)
 ```bash
 python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetensors \
   --steps 20 --threads 1 --period-ms 10 --on-miss hold --device cuda --host-facts \
-  --output bench/artifacts/policy/diffusion-pusht-cuda-period10-hold.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-cuda-period10-hold.json
 ```
 
 CUDA DP kernel mix (WSL, `FLOWEDGE_BACKEND=cuda`, GTX 1650 `sm_75`):
@@ -224,7 +224,7 @@ python -m flowedge_dev verify ulp models/mamba_flow.safetensors
 
 FLOWEDGE_BUILD_DIR=build-relay \
 FLOWEDGE_RELAY_BENCH_REPORT_DIR=bench-results \
-./scripts/relay_bench.sh models/mamba_flow.safetensors
+./tools/scripts/relay_bench.sh models/mamba_flow.safetensors
 ```
 
 ```powershell
@@ -294,11 +294,11 @@ for i in 1 2 3 4 5; do ./build/flowedge_job_qos_bench 1000000; done
 ## Budgets
 
 ```bash
-FLOWEDGE_BUILD_DIR=build-all ./scripts/verify_all.sh models/mamba_flow.safetensors
+FLOWEDGE_BUILD_DIR=build-all ./tools/scripts/verify_all.sh models/mamba_flow.safetensors
 cat build-all/budget-report.md
 ```
 
-`bench/config/budget-baseline.json` records the named Release configuration,
+`tools/benchmark/config/budget-baseline.json` records the named Release configuration,
 measured revisions, and rationale for the current thresholds. Rebaseline only
 after comparing the old and new revisions with the same toolchain. The static
 archive byte count includes compiler- and archive-format overhead, so it is a

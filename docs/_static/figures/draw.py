@@ -180,20 +180,6 @@ class Scene:
         for i, t in enumerate(texts):
             self.caption(x, y + i * leading, t, size=size, anchor=anchor, fill=fill, bold=bold)
 
-    def check(self, x: float, y: float, state: str) -> None:
-        """state: done | soon | no"""
-        if state == "done":
-            fill, mark = GREEN, "✓"
-        elif state == "soon":
-            fill, mark = SUN, "◐"
-        else:
-            fill, mark = "#E8D7A8", "○"
-        self.svg.append(
-            f'<circle cx="{x:.0f}" cy="{y:.0f}" r="11" fill="{fill}" stroke="{INK}" stroke-width="2"/>'
-            f'<text x="{x:.0f}" y="{y + 5:.0f}" text-anchor="middle" font-size="13" '
-            f'font-family="Trebuchet MS, Segoe UI, sans-serif" font-weight="800" fill="{INK}">{mark}</text>'
-        )
-
     def box(
         self,
         x: float,
@@ -298,16 +284,22 @@ class Scene:
 
     def write(self) -> None:
         svg = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.w} {self.h}" '
-            f'width="{self.w}" height="{self.h}" role="img">',
+            (
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.w} {self.h}" '
+                f'width="{self.w}" height="{self.h}" role="img">'
+            ),
             f"<title>{self.title}</title>",
             "<defs>",
-            f"<marker id='{self.name}-arr' markerWidth='10' markerHeight='10' refX='8' refY='3.2' "
-            "orient='auto'><path d='M0,0 L10,3.2 L0,6.4 Z' fill='#2B2118'/></marker>",
+            (
+                f"<marker id='{self.name}-arr' markerWidth='10' markerHeight='10' refX='8' refY='3.2' "
+                "orient='auto'><path d='M0,0 L10,3.2 L0,6.4 Z' fill='#2B2118'/></marker>"
+            ),
             "</defs>",
             f'<rect width="100%" height="100%" rx="22" fill="{BG}" stroke="#E8D7A8" stroke-width="3"/>',
-            f'<text x="28" y="38" font-size="22" font-family="Trebuchet MS, Segoe UI, sans-serif" '
-            f'font-weight="800" fill="{NAVY}">{self.title}</text>',
+            (
+                f'<text x="28" y="38" font-size="22" font-family="Trebuchet MS, Segoe UI, sans-serif" '
+                f'font-weight="800" fill="{NAVY}">{self.title}</text>'
+            ),
         ]
         svg.extend(self.svg)
         svg.append("</svg>")
@@ -632,69 +624,6 @@ def matrix() -> None:
     s.write()
 
 
-def status() -> None:
-    s = Scene("status", 980, 600, "what ships on main")
-
-    def row(title: str, y: float, items: list[tuple]) -> None:
-        s.caption(36, y, title, size=16)
-        x = 36
-        for w, fill, st, label in items:
-            s.box(x, y + 22, w, 56, fill, "")
-            s.check(x + 18, y + 50, st)
-            s.caption(x + w / 2 + 10, y + 54, label, size=13, anchor="middle")
-            x += w + 12
-
-    row(
-        "Backends",
-        58,
-        [
-            (230, GREEN, "done", "CPU  AVX2 / NEON"),
-            (220, GREEN, "done", "CUDA flow+DP"),
-            (140, CREAM, "no", "Vulkan"),
-            (260, CREAM, "no", "Tenstorrent / Metal"),
-        ],
-    )
-    row(
-        "Backbones",
-        150,
-        [
-            (200, GREEN, "done", "Mamba"),
-            (240, GREEN, "done", "Transformer"),
-        ],
-    )
-    row(
-        "Heads",
-        242,
-        [
-            (210, PURPLE, "done", "flow matching"),
-            (210, ORANGE, "done", "Diffusion Policy"),
-            (230, SUN, "soon", "SmolVLA expert"),
-        ],
-    )
-    row(
-        "Models",
-        334,
-        [
-            (160, GREEN, "done", "mamba_flow"),
-            (180, GREEN, "done", "diffusion_pusht"),
-            (140, CREAM, "no", "π0"),
-            (140, CREAM, "no", "DiT"),
-            (200, CREAM, "no", "native VLM"),
-        ],
-    )
-    row(
-        "Precisions",
-        426,
-        [
-            (150, SUN, "done", "FP32"),
-            (150, SUN, "done", "BF16"),
-            (150, CREAM, "no", "INT8"),
-        ],
-    )
-    s.caption(36, 548, "solvers on the heads:  Euler / Heun / RK4   ·   DDIM / DDPM", size=14)
-    s.write()
-
-
 def compare() -> None:
     s = Scene("compare", 920, 340, "matched PushT  ·  policy p50  ·  threads=1")
     s.box(40, 80, 200, 70, PINK, "PyTorch")
@@ -904,7 +833,7 @@ def _perf_gif() -> None:
         )),
     )
 
-    big, font, small, mid = _fonts()
+    big, _font, small, mid = _fonts()
     w, h = 760, 540
     cream = (255, 246, 220)
     track = (245, 232, 200)
@@ -996,7 +925,6 @@ def main() -> None:
         sequence,
         dataflow,
         matrix,
-        status,
         compare,
         vs_arch,
         policies,

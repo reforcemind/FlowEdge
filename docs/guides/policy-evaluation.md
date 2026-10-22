@@ -48,7 +48,7 @@ Unsupported source layouts fail during setup; this is not a universal LeRobot ad
 python -m flowedge_dev bench policy models/diffusion_pusht.flowedge.safetensors \
   --source models/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 \
   --steps 10 --iterations 100 --warmup 5 --threads 1 \
-  --output bench/artifacts/policy/diffusion-pusht-report.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-report.json
 ```
 
 CUDA matched replay uses the same observations, processor, noise, and DDIM
@@ -62,9 +62,9 @@ device-resident together:
 python -m flowedge_dev bench policy models/diffusion_pusht.flowedge.safetensors \
   --source models/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 \
   --steps 10 --iterations 10 --warmup 2 --threads 1 --device cuda \
-  --observations bench/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz \
+  --observations tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz \
   --build-dir /path/to/cuda-build \
-  --output bench/artifacts/policy/diffusion-pusht-cuda-replay.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.json
 ```
 
 Fail closed if `torch.cuda` is missing or FlowEdge was not built with
@@ -117,5 +117,5 @@ success-rate claim.
 ```bash
 python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetensors \
   --steps 20 --threads 1 --period-ms 10 --on-miss hold --device cuda --host-facts \
-  --output bench/artifacts/policy/diffusion-pusht-cuda-period10-hold.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-cuda-period10-hold.json
 ```

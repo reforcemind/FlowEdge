@@ -77,10 +77,10 @@ RUN cmake -S . -B "$FLOWEDGE_BUILD_DIR" -G Ninja \
     && "$FLOWEDGE_BUILD_DIR/flowedge_worker_drain_bench" 100 \
     && "$FLOWEDGE_BUILD_DIR/action_delivery_sample" \
     && "$FLOWEDGE_BUILD_DIR/flowedge_action_delivery_bench" 100 \
-    && FLOWEDGE_BUILD_DIR="$FLOWEDGE_BUILD_DIR" ./scripts/relay_demo.sh models/mamba_flow.safetensors \
-    && FLOWEDGE_BUILD_DIR="$FLOWEDGE_BUILD_DIR" ./scripts/job_demo.sh models/mamba_flow.safetensors
+    && FLOWEDGE_BUILD_DIR="$FLOWEDGE_BUILD_DIR" ./tools/scripts/relay_demo.sh models/mamba_flow.safetensors \
+    && FLOWEDGE_BUILD_DIR="$FLOWEDGE_BUILD_DIR" ./tools/scripts/job_demo.sh models/mamba_flow.safetensors
 
-RUN python3 -m pip install --break-system-packages . \
+RUN python3 -m pip install --break-system-packages . huggingface_hub \
     && python3 -c "import flowedge; print('import OK:', flowedge.Engine)" \
     && python3 -m pip install --break-system-packages --no-deps -e integrations/lerobot \
     && python3 -m unittest discover -s integrations/lerobot/tests -v \

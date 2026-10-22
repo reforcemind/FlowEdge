@@ -5,16 +5,20 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import patch
 
 from flowedge_lerobot.deployment import (
     NATIVE_CHECKPOINT,
     SOURCE_DIRECTORY,
-    _config_sha256,
+    _asset_bundle_sha256,
     _asset_file_hashes,
+    _config_sha256,
     _copy_vlm_assets,
     _hub_blob_directory,
     _inside,
+    _package_relative_path,
+    _resolve_bundle_root,
     _resolve_native_checkpoint,
     _sha256,
     create_deployment_package,
@@ -25,6 +29,155 @@ from flowedge_lerobot.deployment import (
 
 
 class DeploymentPathTests(unittest.TestCase):
+    def test_local_bundle_paths_expand_home_and_do_not_fall_through_to_hub(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            package = home / "deploy"
+            package.mkdir()
+            options = {
+                "revision": None,
+                "cache_dir": None,
+                "force_download": False,
+                "token": None,
+                "local_files_only": False,
+            }
+            with patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp}):
+                self.assertEqual(
+                    _resolve_bundle_root("~/deploy", **options), package.resolve()
+                )
+                with self.assertRaisesRegex(FileNotFoundError, "package directory"):
+                    _resolve_bundle_root("~/missing", **options)
+
+    def test_fast_smolvla_validation_checks_layout_without_hashing_weights(self):
+        from flowedge_lerobot.deployment import PACKAGE_MANIFEST
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "package")
+            source = root / SOURCE_DIRECTORY
+            assets = source / "vlm_assets"
+            assets.mkdir(parents=True)
+            (root / "config.json").write_text(
+                json.dumps(
+                    {
+                        "type": "flowedge_smolvla",
+                        "checkpoint_path": NATIVE_CHECKPOINT,
+                        "source_checkpoint_path": SOURCE_DIRECTORY,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            relative_files = (
+                "flowedge_model.safetensors",
+                "source/model.safetensors",
+                "source/config.json",
+                "source/policy_preprocessor.json",
+                "source/policy_postprocessor.json",
+                "source/vlm_assets/config.json",
+                "source/vlm_assets/tokenizer_config.json",
+            )
+            for relative in relative_files:
+                path = root.joinpath(*relative.split("/"))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"fixture")
+
+            file_hashes = {
+                relative: _sha256(root / relative) for relative in relative_files
+            }
+            asset_hashes = {
+                name.removeprefix("source/vlm_assets/"): digest
+                for name, digest in file_hashes.items()
+                if name.startswith("source/vlm_assets/")
+            }
+            manifest = {
+                "schema": 1,
+                "policy_type": "flowedge_smolvla",
+                "files": file_hashes,
+                "vlm_assets": {
+                    "model": "org/test-vlm",
+                    "files": asset_hashes,
+                    "sha256": _asset_bundle_sha256(asset_hashes),
+                },
+            }
+            (root / PACKAGE_MANIFEST).write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+
+            with patch(
+                "flowedge_lerobot.deployment._sha256",
+                side_effect=AssertionError("fast load must not hash model files"),
+            ):
+                validated = validate_deployment_package(
+                    root, verify_integrity=False
+                )
+
+            self.assertFalse(validated["integrity_verified"])
+
+    def test_package_paths_reject_absolute_and_parent_paths_on_both_platforms(self):
+        for value in (
+            "/outside/model.safetensors",
+            "C:\\outside\\model.safetensors",
+            "../outside/model.safetensors",
+            "source/../../outside/model.safetensors",
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ValueError, "must stay inside"
+            ):
+                _package_relative_path(value, "checkpoint_path")
+
+    def test_package_validator_rejects_absolute_native_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "package")
+            root.mkdir()
+            (root / "config.json").write_text(
+                json.dumps(
+                    {
+                        "type": "flowedge",
+                        "input_mode": "visual",
+                        "checkpoint_path": str(Path(tmp, "outside.safetensors")),
+                        "source_checkpoint_path": "source",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "flowedge-package.json").write_text(
+                json.dumps({"schema": 1, "policy_type": "flowedge"}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "checkpoint_path must stay inside"):
+                validate_deployment_package(root)
+
+    def test_package_validator_rejects_absolute_source_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "package")
+            root.mkdir()
+            checkpoint = root / NATIVE_CHECKPOINT
+            checkpoint.write_bytes(b"fixture")
+            (root / "config.json").write_text(
+                json.dumps(
+                    {
+                        "type": "flowedge",
+                        "input_mode": "visual",
+                        "checkpoint_path": NATIVE_CHECKPOINT,
+                        "source_checkpoint_path": str(Path(tmp, "outside-source")),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "flowedge-package.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "policy_type": "flowedge",
+                        "converted_sha256": _sha256(checkpoint),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError, "source_checkpoint_path must stay inside"
+            ):
+                validate_deployment_package(root)
+
     def test_native_checkpoint_cannot_escape_package(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp, "package")
@@ -144,7 +297,7 @@ class PackagePolicyTests(unittest.TestCase):
                 )
             self.assertEqual(result, output.resolve())
             package.assert_called_once_with(
-                converted,
+                converted.resolve(),
                 source.resolve(),
                 output.resolve(),
                 action_steps=None,
@@ -229,7 +382,7 @@ class DeploymentPackageTests(unittest.TestCase):
         from lerobot_policy_flowedge.modeling_flowedge import FlowEdgePolicy
 
         class Engine:
-            diffusion_metadata = {
+            diffusion_metadata: ClassVar[dict] = {
                 "condition_dim": 3,
                 "action_dim": 2,
                 "horizon": 4,

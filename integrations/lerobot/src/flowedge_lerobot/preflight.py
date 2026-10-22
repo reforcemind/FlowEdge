@@ -152,7 +152,7 @@ def run_preflight(
 
     preflight_started = time.perf_counter()
     integrity_started = time.perf_counter()
-    package = validate_deployment_package(reference)
+    package = validate_deployment_package(reference, verify_integrity=True)
     integrity_ms = (time.perf_counter() - integrity_started) * 1_000
     policy_type = package["manifest"]["policy_type"]
     if policy_type == "flowedge_smolvla" and (
@@ -298,7 +298,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             iterations=args.iterations,
             task=args.task,
         )
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - preserve failures in the report
         report = {
             "schema_version": 1,
             "status": "error",

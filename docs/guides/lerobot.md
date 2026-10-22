@@ -67,6 +67,10 @@ policy.reset()
 action = policy.select_action(observation)
 ```
 
+Loading checks the package layout without rereading large weights to hash them.
+Use `load_policy(..., verify_integrity=True)` when you need full package hashes;
+the preflight command below always performs that full check.
+
 The result is a postprocessed LeRobot tensor shaped `(1, action_dim)`, not the
 named joint mapping accepted by a robot driver. LeRobot's standard rollout
 performs that mapping.
@@ -158,7 +162,7 @@ On a physical Jetson, run:
 
 ```bash
 FLOWEDGE_EDGE_REPORT=jetson.json \
-  scripts/edge_dp_rollout.sh models/diffusion.flowedge.safetensors
+  tools/scripts/edge_dp_rollout.sh models/diffusion.flowedge.safetensors
 ```
 
 The helper requires Linux aarch64, the L4T release file, Python 3.12+, and

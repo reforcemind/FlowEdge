@@ -35,7 +35,7 @@ body:
     attributes:
       label: Benchmark command
       placeholder: |
-        ./scripts/bench.sh ...
+        ./tools/scripts/bench.sh ...
       render: shell
     validations:
       required: true
