@@ -203,7 +203,8 @@ class DeploymentPathTests(unittest.TestCase):
                 self.skipTest(f"symlink creation is unavailable: {exc}")
 
             self.assertEqual(
-                _inside(snapshot, snapshot / "config.json", "config.json"), blob
+                _inside(snapshot, snapshot / "config.json", "config.json"),
+                blob.resolve(),
             )
             self.assertEqual(
                 _asset_file_hashes(
