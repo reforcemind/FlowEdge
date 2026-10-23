@@ -8,7 +8,7 @@ Open starters: [Windows first-run](https://github.com/reforcemind/FlowEdge/issue
 [gym PushT GIF](https://github.com/reforcemind/FlowEdge/issues/186).
 CPU wheels live on the [v0.1.2](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2) Release.
 Runtime changes keep the zero-allocation hot path. Parity (ULP, convert, diffusion) is local:
-`scripts/verify_all.sh` or `scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
+`tools/scripts/verify_all.sh` or `tools/scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
 
 | Goal | Guide |
 |---|---|

@@ -27,6 +27,7 @@ evaluation = ["gym-pusht==0.1.5", "pymunk>=6.6,<7"]
 dp = ["lerobot[diffusion]>=0.6.1,<0.7"]
 rollout = ["lerobot[dataset,diffusion]>=0.6.1,<0.7"]
 so101 = ["lerobot[dataset,diffusion,feetech]>=0.6.1,<0.7"]
+so100 = ["lerobot[dataset,diffusion,feetech]>=0.6.1,<0.7"]
 smolvla = ["lerobot[smolvla]>=0.6.1,<0.7"]
 
 [tool.setuptools.packages.find]

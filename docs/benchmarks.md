@@ -7,8 +7,8 @@
 
 | Suite | Location | Measures |
 |---|---|---|
-| Kernels | `bench/kernels/` | Dense ops, including DP Conv1D shapes |
-| Runtime | `bench/runtime/` | Relay admission, queues, delivery |
+| Kernels | `tools/benchmark/kernels/` | Dense ops, including DP Conv1D shapes |
+| Runtime | `tools/benchmark/runtime/` | Relay admission, queues, delivery |
 | Flow matching vs PyTorch | `python -m flowedge_dev verify ulp` | ULP / rel-error on `mamba_flow` — not a p50 |
 | Diffusion Policy vs PyTorch | `python -m flowedge_dev bench policy` | Same observations, processor, noise, DDIM vs LeRobot |
 | Period loop | `python -m flowedge_dev pipeline rollout` | `--period-ms`, `--on-miss`, RSS; `--device cuda` on a CUDA Core build |
@@ -22,17 +22,9 @@ you keep them in PyTorch/LeRobot or a graph compiler. With FlowEdge you convert
 the head, pin RSS, and compare against that same PyTorch reference. Mix ULP
 with p50 and the claim is wrong. [Performance](performance).
 
-## Canonical policy report
-
-```text
-python -m flowedge_dev bench policy models/policy.safetensors \
-  --source models/diffusion_pusht \
-  --revision <immutable-hf-revision> \
-  --steps 10 --iterations 100 --warmup 5 --threads 1 \
-  --output bench/artifacts/policy/diffusion-pusht-report.json
-```
-
-JSON + Markdown together. Reference is LeRobot/PyTorch; candidate is FlowEdge native.
+For the exact report command, artifact contents, and reproducibility contract,
+use the [policy benchmark guide](guides/edge-benchmarks). For measured results
+and their hardware conditions, see [Performance](performance).
 
 ## Interpretation
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import ROOT
 
-# Everyday commands first. Scripts stay in tools/ and convert/; this module is the front door.
+# Implementations live under tools/; this is the single maintainer command entry point.
 _COMMANDS: dict[str, dict[str, Path]] = {
     "bench": {
         "policy": ROOT / "tools/benchmark/run_policy_report.py",
@@ -33,8 +33,8 @@ _COMMANDS: dict[str, dict[str, Path]] = {
         "delivery": ROOT / "tools/verification/verify_delivery.py",
     },
     "pipeline": {
-        "convert": ROOT / "convert/convert.py",
-        "inspect": ROOT / "convert/policy_inspect.py",
+        "convert": ROOT / "tools/conversion/convert.py",
+        "inspect": ROOT / "tools/conversion/policy_inspect.py",
         "package": ROOT / "integrations/lerobot/src/flowedge_lerobot/deployment.py",
         "preflight": ROOT / "integrations/lerobot/src/flowedge_lerobot/preflight.py",
         "rollout": ROOT / "tools/verification/run_edge_dp_rollout.py",
@@ -54,7 +54,7 @@ Everyday:
   python -m flowedge_dev verify ulp models/mamba_flow.safetensors
   python -m flowedge_dev pipeline rollout models/diffusion_pusht.flowedge.safetensors
   python -m flowedge_dev pipeline convert <src> <dst> --arch mamba|diffusion|transformer
-  python -m flowedge_dev pipeline package <converted> <source> <output>
+  python -m flowedge_dev pipeline package <source> <output> [--converted-checkpoint <converted>]
   python -m flowedge_dev pipeline preflight <package> --output preflight.json
 """
 

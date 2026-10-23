@@ -68,27 +68,43 @@ def present_images(capture, image_features, batch_size: int) -> dict[str, np.nda
             raise ValueError(f"capture {key!r} must be finite RGB in [0, 1]")
         images[key] = image
     if not images:
-        raise ValueError("capture must contain at least one configured observation image")
+        raise ValueError(
+            "capture must contain at least one configured observation image"
+        )
     return images
 
 
 def clone_batch(batch: dict, torch) -> dict:
-    return {key: value.clone() if isinstance(value, torch.Tensor) else value for key, value in batch.items()}
+    return {
+        key: value.clone() if isinstance(value, torch.Tensor) else value
+        for key, value in batch.items()
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("checkpoint", type=Path, help="FlowEdge SmolVLA action-expert safetensors")
+    parser.add_argument(
+        "checkpoint", type=Path, help="FlowEdge SmolVLA action-expert safetensors"
+    )
     parser.add_argument("model", type=Path, help="local lerobot/smolvla_base directory")
-    parser.add_argument("capture", type=Path, help="recorded source-pipeline .npz capture")
-    parser.add_argument("--module-path", type=Path, required=True, help="directory containing flowedge extension")
+    parser.add_argument(
+        "capture", type=Path, help="recorded source-pipeline .npz capture"
+    )
+    parser.add_argument(
+        "--module-path",
+        type=Path,
+        required=True,
+        help="directory containing flowedge extension",
+    )
     parser.add_argument(
         "--plugin-path",
         type=Path,
         default=Path("integrations/lerobot/src"),
         help="directory containing flowedge_lerobot (default: %(default)s)",
     )
-    parser.add_argument("--output", type=Path, required=True, help="write portable JSON report")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="write portable JSON report"
+    )
     parser.add_argument(
         "--action-tolerance",
         type=float,
@@ -106,19 +122,30 @@ def main() -> int:
         import lerobot
         import torch
         import transformers
-        from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, LeRobotSmolVLACacheProvider
+        from flowedge_lerobot import (
+            FlowEdgeSmolVLACachedExpert,
+            LeRobotSmolVLACacheProvider,
+        )
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-        if not args.checkpoint.is_file() or not args.model.is_dir() or not args.capture.is_file():
+        if (
+            not args.checkpoint.is_file()
+            or not args.model.is_dir()
+            or not args.capture.is_file()
+        ):
             raise ValueError("checkpoint, model directory, and capture must exist")
         policy = SmolVLAPolicy.from_pretrained(args.model).eval()
         if policy.config.adapt_to_pi_aloha:
-            raise ValueError("hybrid verifier does not support SmolVLA Aloha action postprocessing")
+            raise ValueError(
+                "hybrid verifier does not support SmolVLA Aloha action postprocessing"
+            )
         batch_size = 1
         state_dim = policy.config.robot_state_feature.shape[0]
         action_dim = policy.config.action_feature.shape[0]
         capture = np.load(args.capture, allow_pickle=False)
-        state = required(capture, "observation.state", np.dtype("float32"), (batch_size, state_dim))
+        state = required(
+            capture, "observation.state", np.dtype("float32"), (batch_size, state_dim)
+        )
         tokens = required(
             capture,
             "observation.language.tokens",
@@ -146,7 +173,9 @@ def main() -> int:
             "observation.language.tokens": torch.from_numpy(tokens),
             "observation.language.attention_mask": torch.from_numpy(language_mask),
         }
-        for key, image in present_images(capture, policy.config.image_features, batch_size).items():
+        for key, image in present_images(
+            capture, policy.config.image_features, batch_size
+        ).items():
             batch[key] = torch.from_numpy(image)
 
         # Keep the source policy and hybrid prefix call at the same reset point:
@@ -156,11 +185,19 @@ def main() -> int:
             source_actions = policy.predict_action_chunk(
                 clone_batch(batch, torch), noise=torch.from_numpy(noise)
             )
-        source_actions = source_actions.detach().to(device="cpu", dtype=torch.float32).numpy()[0]
+        source_actions = (
+            source_actions.detach().to(device="cpu", dtype=torch.float32).numpy()[0]
+        )
         expected_shape = (policy.config.n_action_steps, action_dim)
-        if source_actions.shape != expected_shape or not np.isfinite(source_actions).all():
+        if (
+            source_actions.shape != expected_shape
+            or not np.isfinite(source_actions).all()
+        ):
             raise RuntimeError("source policy emitted an invalid action chunk")
 
+        # The deployed hybrid retains only the source prefix model. Verify its
+        # action chunk against the complete PyTorch source after that release.
+        LeRobotSmolVLACacheProvider.release_source_expert(policy)
         policy.reset()
         cache = LeRobotSmolVLACacheProvider(policy)(clone_batch(batch, torch))
         engine = flowedge.Engine(str(args.checkpoint), threads=0)
@@ -168,13 +205,21 @@ def main() -> int:
             engine,
             action_dim=action_dim,
             action_steps=policy.config.n_action_steps,
-        ).predict_action_chunk(cache, noise=np.ascontiguousarray(noise[0]), steps=policy.config.num_steps)
-        if hybrid.shape != expected_shape or hybrid.dtype != np.float32 or not np.isfinite(hybrid).all():
+        ).predict_action_chunk(
+            cache, noise=np.ascontiguousarray(noise[0]), steps=policy.config.num_steps
+        )
+        if (
+            hybrid.shape != expected_shape
+            or hybrid.dtype != np.float32
+            or not np.isfinite(hybrid).all()
+        ):
             raise RuntimeError("hybrid path emitted an invalid action chunk")
         error = np.abs(hybrid - source_actions)
         maximum = float(error.max())
         if maximum > args.action_tolerance:
-            raise RuntimeError(f"hybrid action parity exceeded tolerance: actions={maximum}")
+            raise RuntimeError(
+                f"hybrid action parity exceeded tolerance: actions={maximum}"
+            )
     except (ImportError, KeyError, OSError, RuntimeError, ValueError) as error:
         print(f"SmolVLA hybrid verification failed: {error}", file=sys.stderr)
         return 2
@@ -206,7 +251,9 @@ def main() -> int:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     print(json.dumps(report, indent=2, sort_keys=True))
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return 0
 
 

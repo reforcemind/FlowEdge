@@ -4,7 +4,7 @@ FlowEdge provides a bounded Linux sanitizer lane for the Core loaders, protocol
 codecs, and Relay parser/process tests:
 
 ```bash
-bash scripts/sanitize.sh
+bash tools/scripts/sanitize.sh
 ```
 
 The script builds with Clang AddressSanitizer and UndefinedBehaviorSanitizer,

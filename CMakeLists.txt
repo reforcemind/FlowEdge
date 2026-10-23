@@ -91,9 +91,9 @@ if(FLOWEDGE_BENCH)
     endif()
   endforeach()
 
-  flowedge_executable(flowedge_kernels_bench bench/kernels/kernels_bench.cc FlowEdge::Core
+  flowedge_executable(flowedge_kernels_bench tools/benchmark/kernels/kernels_bench.cc FlowEdge::Core
                       benchmark::benchmark)
-  flowedge_executable(flowedge_diffusion_breakdown bench/kernels/diffusion_breakdown.cc
+  flowedge_executable(flowedge_diffusion_breakdown tools/benchmark/kernels/diffusion_breakdown.cc
                       FlowEdge::Core)
   execute_process(
     COMMAND git rev-parse --short=12 HEAD
@@ -104,23 +104,23 @@ if(FLOWEDGE_BENCH)
   if(NOT FLOWEDGE_GIT_COMMIT)
     set(FLOWEDGE_GIT_COMMIT "unknown")
   endif()
-  flowedge_executable(flowedge-profile bench/runtime/deadline_profile.cc FlowEdge::Core)
+  flowedge_executable(flowedge-profile tools/benchmark/runtime/deadline_profile.cc FlowEdge::Core)
   target_compile_definitions(flowedge-profile PRIVATE
     FLOWEDGE_GIT_COMMIT="${FLOWEDGE_GIT_COMMIT}")
 
-  flowedge_executable(flowedge_threaded_matmul_bench bench/kernels/threaded_matmul_bench.cc
+  flowedge_executable(flowedge_threaded_matmul_bench tools/benchmark/kernels/threaded_matmul_bench.cc
                       FlowEdge::Core benchmark::benchmark_main Threads::Threads)
 
   if(FLOWEDGE_RELAY)
-    flowedge_executable(flowedge_relay_bench bench/runtime/relay_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_relay_pool_bench bench/runtime/relay_pool_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_cooperative_job_bench bench/runtime/cooperative_job_bench.cc
+    flowedge_executable(flowedge_relay_bench tools/benchmark/runtime/relay_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_relay_pool_bench tools/benchmark/runtime/relay_pool_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_cooperative_job_bench tools/benchmark/runtime/cooperative_job_bench.cc
                         FlowEdge::Relay)
-    flowedge_executable(flowedge_job_queue_bench bench/runtime/job_queue_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_job_qos_bench bench/runtime/job_qos_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_mamba_stream_bench bench/runtime/mamba_stream_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_worker_drain_bench bench/runtime/worker_drain_bench.cc FlowEdge::Relay)
-    flowedge_executable(flowedge_action_delivery_bench bench/runtime/action_delivery_bench.cc
+    flowedge_executable(flowedge_job_queue_bench tools/benchmark/runtime/job_queue_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_job_qos_bench tools/benchmark/runtime/job_qos_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_mamba_stream_bench tools/benchmark/runtime/mamba_stream_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_worker_drain_bench tools/benchmark/runtime/worker_drain_bench.cc FlowEdge::Relay)
+    flowedge_executable(flowedge_action_delivery_bench tools/benchmark/runtime/action_delivery_bench.cc
                         FlowEdge::Relay)
   endif()
 endif()

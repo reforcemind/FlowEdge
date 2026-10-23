@@ -14,13 +14,13 @@ Release tree are here.
 Linux or Git Bash:
 
 ```bash
-FLOWEDGE_BUILD_DIR=build-verify ./scripts/verify_all.sh models/mamba_flow.safetensors
+FLOWEDGE_BUILD_DIR=build-verify ./tools/scripts/verify_all.sh models/mamba_flow.safetensors
 ```
 
 Windows (this repo's Clang gnu-target tree):
 
 ```powershell
-powershell -File scripts/verify_local.ps1 -BuildDir build-win-clang
+powershell -File tools/scripts/verify_local.ps1 -BuildDir build-win-clang
 ```
 
 Kernel-only slice after a CPU op change:

@@ -180,20 +180,6 @@ class Scene:
         for i, t in enumerate(texts):
             self.caption(x, y + i * leading, t, size=size, anchor=anchor, fill=fill, bold=bold)
 
-    def check(self, x: float, y: float, state: str) -> None:
-        """state: done | soon | no"""
-        if state == "done":
-            fill, mark = GREEN, "✓"
-        elif state == "soon":
-            fill, mark = SUN, "◐"
-        else:
-            fill, mark = "#E8D7A8", "○"
-        self.svg.append(
-            f'<circle cx="{x:.0f}" cy="{y:.0f}" r="11" fill="{fill}" stroke="{INK}" stroke-width="2"/>'
-            f'<text x="{x:.0f}" y="{y + 5:.0f}" text-anchor="middle" font-size="13" '
-            f'font-family="Trebuchet MS, Segoe UI, sans-serif" font-weight="800" fill="{INK}">{mark}</text>'
-        )
-
     def box(
         self,
         x: float,
@@ -298,16 +284,22 @@ class Scene:
 
     def write(self) -> None:
         svg = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.w} {self.h}" '
-            f'width="{self.w}" height="{self.h}" role="img">',
+            (
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.w} {self.h}" '
+                f'width="{self.w}" height="{self.h}" role="img">'
+            ),
             f"<title>{self.title}</title>",
             "<defs>",
-            f"<marker id='{self.name}-arr' markerWidth='10' markerHeight='10' refX='8' refY='3.2' "
-            "orient='auto'><path d='M0,0 L10,3.2 L0,6.4 Z' fill='#2B2118'/></marker>",
+            (
+                f"<marker id='{self.name}-arr' markerWidth='10' markerHeight='10' refX='8' refY='3.2' "
+                "orient='auto'><path d='M0,0 L10,3.2 L0,6.4 Z' fill='#2B2118'/></marker>"
+            ),
             "</defs>",
             f'<rect width="100%" height="100%" rx="22" fill="{BG}" stroke="#E8D7A8" stroke-width="3"/>',
-            f'<text x="28" y="38" font-size="22" font-family="Trebuchet MS, Segoe UI, sans-serif" '
-            f'font-weight="800" fill="{NAVY}">{self.title}</text>',
+            (
+                f'<text x="28" y="38" font-size="22" font-family="Trebuchet MS, Segoe UI, sans-serif" '
+                f'font-weight="800" fill="{NAVY}">{self.title}</text>'
+            ),
         ]
         svg.extend(self.svg)
         svg.append("</svg>")
@@ -632,69 +624,6 @@ def matrix() -> None:
     s.write()
 
 
-def status() -> None:
-    s = Scene("status", 980, 600, "what ships on main")
-
-    def row(title: str, y: float, items: list[tuple]) -> None:
-        s.caption(36, y, title, size=16)
-        x = 36
-        for w, fill, st, label in items:
-            s.box(x, y + 22, w, 56, fill, "")
-            s.check(x + 18, y + 50, st)
-            s.caption(x + w / 2 + 10, y + 54, label, size=13, anchor="middle")
-            x += w + 12
-
-    row(
-        "Backends",
-        58,
-        [
-            (230, GREEN, "done", "CPU  AVX2 / NEON"),
-            (220, GREEN, "done", "CUDA flow+DP"),
-            (140, CREAM, "no", "Vulkan"),
-            (260, CREAM, "no", "Tenstorrent / Metal"),
-        ],
-    )
-    row(
-        "Backbones",
-        150,
-        [
-            (200, GREEN, "done", "Mamba"),
-            (240, GREEN, "done", "Transformer"),
-        ],
-    )
-    row(
-        "Heads",
-        242,
-        [
-            (210, PURPLE, "done", "flow matching"),
-            (210, ORANGE, "done", "Diffusion Policy"),
-            (230, SUN, "soon", "SmolVLA expert"),
-        ],
-    )
-    row(
-        "Models",
-        334,
-        [
-            (160, GREEN, "done", "mamba_flow"),
-            (180, GREEN, "done", "diffusion_pusht"),
-            (140, CREAM, "no", "π0"),
-            (140, CREAM, "no", "DiT"),
-            (200, CREAM, "no", "native VLM"),
-        ],
-    )
-    row(
-        "Precisions",
-        426,
-        [
-            (150, SUN, "done", "FP32"),
-            (150, SUN, "done", "BF16"),
-            (150, CREAM, "no", "INT8"),
-        ],
-    )
-    s.caption(36, 548, "solvers on the heads:  Euler / Heun / RK4   ·   DDIM / DDPM", size=14)
-    s.write()
-
-
 def compare() -> None:
     s = Scene("compare", 920, 340, "matched PushT  ·  policy p50  ·  threads=1")
     s.box(40, 80, 200, 70, PINK, "PyTorch")
@@ -711,27 +640,6 @@ def compare() -> None:
     s.note(620, 178, "same checkpoint + DDIM", fill=SKY)
     s.caption(460, 280, "CPU  ·  threads=1  ·  not a 10 ms loop", size=14, anchor="middle")
     s.caption(460, 308, "threads=2: 800 vs 1031 ms    threads=4: 633 vs 819 ms", size=14, anchor="middle")
-    s.write()
-
-
-def vs_tools() -> None:
-    s = Scene("vs-tools", 980, 360, "without FlowEdge  vs  with FlowEdge")
-    s.box(36, 70, 280, 230, PINK, "")
-    s.caption(176, 108, "Keep PyTorch", size=20, anchor="middle")
-    s.lines(176, 142, ["train + encode RGB", "malloc after warmup", "you invent --on-miss", "KV cache can grow"], size=14)
-    s.caption(176, 248, "right for training", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.box(350, 70, 280, 230, SUN, "")
-    s.caption(490, 108, "ONNX / TRT / ET", size=20, anchor="middle")
-    s.lines(490, 142, ["general graph", "any opset that fits", "RSS is the compiler's", "measure on your board"], size=14)
-    s.caption(490, 248, "not this miss contract", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.box(664, 70, 280, 230, TEAL, "")
-    s.caption(804, 108, "FlowEdge Core", size=20, anchor="middle")
-    s.lines(804, 142, ["this flow or DP head", "arena sized at load", "--on-miss hold|drop|raise", "encoder stays outside"], size=14)
-    s.caption(804, 248, "right for the period", size=13, anchor="middle", fill=NAVY, bold=False)
-
-    s.caption(490, 330, "same checkpoint in, action chunk out  ·  only DP has a published p50 vs PyTorch", size=14, anchor="middle")
     s.write()
 
 
@@ -780,30 +688,6 @@ def policies() -> None:
     )
 
     s.caption(490, 310, "same arena, same miss contract  ·  pick the head you trained", size=14, anchor="middle")
-    s.write()
-
-
-def why_this() -> None:
-    s = Scene("why-this", 980, 570, "why this, not the usual stack")
-    rows = [
-        (PINK, "PyTorch / LeRobot|as the robot runtime", TEAL, "same checkpoint|arena, kernels, --on-miss"),
-        (SUN, "TensorRT / ONNX / ET|general graphs", GREEN, "this flow or DP head|RSS known at load"),
-        (CORAL, "Transformer KV cache|grows with the horizon", TEAL, "Mamba SSM state|constant in time"),
-        (ORANGE, "dozens of DDIM steps|on the hot path", PURPLE, "short flow ODE|DP if you trained it"),
-        (PINK, "model servers|throughput / queues", GREEN, "newest valid action|before the deadline"),
-    ]
-    y = 72
-    for left_fill, left, right_fill, right in rows:
-        s.box(36, y, 380, 70, left_fill, left, size=16)
-        s.arrow(428, y + 35, 534, y + 35, color=NAVY)
-        s.box(544, y, 400, 70, right_fill, right, size=16)
-        y += 78
-
-    s.note(36, 472, "not a trainer", fill=CREAM)
-    s.note(248, 472, "not a graph compiler", fill=CREAM)
-    s.note(532, 472, "not a safety controller", fill=SUN)
-    s.doodle_clock(910, 490, 18)
-    s.caption(490, 540, "DP p50   851 vs 1409 ms    threads=1    CPU    not a 10 ms loop", size=14, anchor="middle")
     s.write()
 
 
@@ -863,19 +747,15 @@ def _fonts():
         ("C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf"),
     ):
         try:
-            from PIL import ImageFont as F
-
             return (
-                F.truetype(bold, 26),
-                F.truetype(regular, 20),
-                F.truetype(regular, 15),
-                F.truetype(bold, 22),
+                ImageFont.truetype(bold, 26),
+                ImageFont.truetype(regular, 20),
+                ImageFont.truetype(regular, 15),
+                ImageFont.truetype(bold, 22),
             )
         except OSError:
             continue
-    from PIL import ImageFont as F
-
-    d = F.load_default()
+    d = ImageFont.load_default()
     return d, d, d, d
 
 
@@ -953,7 +833,7 @@ def _perf_gif() -> None:
         )),
     )
 
-    big, font, small, mid = _fonts()
+    big, _font, small, mid = _fonts()
     w, h = 760, 540
     cream = (255, 246, 220)
     track = (245, 232, 200)
@@ -1045,12 +925,9 @@ def main() -> None:
         sequence,
         dataflow,
         matrix,
-        status,
         compare,
-        vs_tools,
         vs_arch,
         policies,
-        why_this,
         big_flow,
     ):
         fn()

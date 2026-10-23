@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-10T19:33:29.747392+00:00",
+  "model": {
+    "id": "lerobot/diffusion_pusht",
+    "revision": "84a7c23178445c6bbf7e1a884ff497017910f653",
+    "sha256": "995d14d35db57d95c35ad9704c3d79c8612b7bc45f3877e5c46c2cdc516856a8",
+    "converted_sha256": "3367c7236d7a0d6da74e28cde1514ecc7b31470ec028e244cf28c93f93e0b5d6"
+  },
+  "processor": {
+    "id": "lerobot/diffusion_pusht",
+    "revision": "84a7c23178445c6bbf7e1a884ff497017910f653",
+    "stats": {
+      "observation.image": {
+        "mean": [
+          [
+            [
+              0.48500001430511475
+            ]
+          ],
+          [
+            [
+              0.4560000002384186
+            ]
+          ],
+          [
+            [
+              0.4059999883174896
+            ]
+          ]
+        ],
+        "std": [
+          [
+            [
+              0.2290000021457672
+            ]
+          ],
+          [
+            [
+              0.2240000069141388
+            ]
+          ],
+          [
+            [
+              0.22499999403953552
+            ]
+          ]
+        ]
+      },
+      "observation.state": {
+        "max": [
+          496.14617919921875,
+          510.9578857421875
+        ],
+        "min": [
+          13.45642375946045,
+          32.93829345703125
+        ]
+      }
+    },
+    "config_sha256": "d391a7bf488accd1c26b2043482f0060b0855b1ec236f3d7358486918472c0a5"
+  },
+  "contract": {
+    "observation_schema_hash": "2dde368a238be30a27b8a7c243b724c51d7c744946f28e439c2afc625e2904fe",
+    "observation_steps": 2,
+    "action_steps": 8,
+    "action_dim": 2,
+    "batch_size": 1,
+    "inference_steps": 10,
+    "action_units": "dataset",
+    "normalization": "minmax",
+    "solver": "ddim"
+  },
+  "hardware": {
+    "host": "Jankowski",
+    "os": "Linux-5.15.153.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "cpu": "x86_64",
+    "threads": 1,
+    "accelerator": "cuda",
+    "compiler": "GCC 13.3.0",
+    "build_type": "Release",
+    "cuda_device": "NVIDIA GeForce GTX 1650"
+  },
+  "commands": {
+    "flowedge": "/home/igor/fe-cuda-venv/bin/python -m flowedge_lerobot.benchmark models/diffusion_pusht.flowedge.safetensors --source models/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 --model-id lerobot/diffusion_pusht --steps 10 --iterations 20 --warmup 3 --threads 1 --device cuda --reference-compile default --seed 7 --output bench-results/perf-10ms/cuda-policy-compiled.json --observations tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz",
+    "lerobot": "/home/igor/fe-cuda-venv/bin/python -m flowedge_lerobot.benchmark models/diffusion_pusht.flowedge.safetensors --source models/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 --model-id lerobot/diffusion_pusht --steps 10 --iterations 20 --warmup 3 --threads 1 --device cuda --reference-compile default --seed 7 --output bench-results/perf-10ms/cuda-policy-compiled.json --observations tools/benchmark/artifacts/policy/diffusion-pusht-cpu-replay.observations.npz"
+  },
+  "comparison": {
+    "candidate": "FlowEdge native runtime",
+    "reference": "LeRobot policy executed with PyTorch",
+    "reference_framework": "PyTorch",
+    "reference_compile": "default",
+    "compiled_scope": "U-Net only; encoder and DDIM scheduler remain eager",
+    "scope": "matched observation encoder, history, noise, and DDIM schedule on CUDA; FlowEdge engine is freed before the PyTorch U-Net is loaded; not TensorRT/ONNX; not Jetson/ARM"
+  },
+  "measurements": {
+    "flowedge": {
+      "status": "measured",
+      "startup_ms": 29710.214756999998,
+      "encoder_ms": {
+        "p50": 5.1618975,
+        "p95": 7.39399235,
+        "p99": 7.725053669999999
+      },
+      "policy_ms": {
+        "p50": 103.8453035,
+        "p95": 104.94124289999999,
+        "p99": 105.14458698
+      },
+      "end_to_end_ms": {
+        "p50": 109.1611245,
+        "p95": 111.53937690000001,
+        "p99": 111.66532258000001
+      },
+      "throughput_hz": 9.122475655618926,
+      "rss_mb": 3149.22265625,
+      "rss_reason": "",
+      "allocations": {
+        "setup": null,
+        "hot_path": null,
+        "reason": "Python/PyTorch/native process allocations are not instrumented by this runner"
+      }
+    },
+    "lerobot": {
+      "status": "measured",
+      "startup_ms": 30839.715002999998,
+      "encoder_ms": {
+        "p50": 5.5692915,
+        "p95": 6.4887929,
+        "p99": 6.5290561799999995
+      },
+      "policy_ms": {
+        "p50": 328.837976,
+        "p95": 344.7638495,
+        "p99": 349.1019371
+      },
+      "end_to_end_ms": {
+        "p50": 334.4334225,
+        "p95": 350.1236592,
+        "p99": 355.04335504
+      },
+      "throughput_hz": 2.961679898732026,
+      "rss_mb": 3149.22265625,
+      "rss_reason": "",
+      "allocations": {
+        "setup": null,
+        "hot_path": null,
+        "reason": "Python/PyTorch/native process allocations are not instrumented by this runner"
+      }
+    }
+  },
+  "raw_samples": {
+    "flowedge": {
+      "encoder_ms": [
+        5.886178,
+        5.055933,
+        7.807819,
+        4.912834,
+        5.085834,
+        7.372212,
+        5.058166,
+        4.973608,
+        4.93895,
+        5.008848,
+        5.237961,
+        4.846624,
+        5.03108,
+        6.348968,
+        6.099176,
+        6.30732,
+        6.108398,
+        6.216646,
+        5.3498,
+        5.038847
+      ],
+      "policy_ms": [
+        103.631528,
+        103.715601,
+        103.723272,
+        103.685992,
+        105.195423,
+        104.324597,
+        103.71201,
+        103.79084,
+        103.685506,
+        103.707835,
+        103.856856,
+        103.833751,
+        104.049467,
+        103.986072,
+        103.916464,
+        103.997528,
+        104.927865,
+        104.255668,
+        103.877632,
+        103.828216
+      ],
+      "end_to_end_ms": [
+        109.517706,
+        108.771534,
+        111.531091,
+        108.598826,
+        110.281257,
+        111.696809,
+        108.770176,
+        108.764448,
+        108.624456,
+        108.716683,
+        109.094817,
+        108.680375,
+        109.080547,
+        110.33504,
+        110.01564,
+        110.304848,
+        111.036263,
+        110.472314,
+        109.227432,
+        108.867063
+      ]
+    },
+    "lerobot": {
+      "encoder_ms": [
+        6.213223,
+        5.324528,
+        5.321546,
+        6.08682,
+        5.307038,
+        6.418208,
+        6.486144,
+        6.539122,
+        5.38897,
+        5.599353,
+        5.53923,
+        4.952006,
+        5.981721,
+        5.624507,
+        6.115401,
+        5.652711,
+        4.922659,
+        5.063104,
+        4.949052,
+        5.520078
+      ],
+      "policy_ms": [
+        343.217202,
+        343.807977,
+        344.478449,
+        350.186459,
+        331.821855,
+        330.03634,
+        330.394125,
+        328.212162,
+        328.002541,
+        327.542139,
+        327.744994,
+        328.724876,
+        329.045119,
+        328.102684,
+        328.951076,
+        328.090106,
+        329.192902,
+        328.204159,
+        327.485827,
+        326.677834
+      ],
+      "end_to_end_ms": [
+        349.430425,
+        349.132505,
+        349.799995,
+        356.273279,
+        337.128893,
+        336.454548,
+        336.880269,
+        334.751284,
+        333.391511,
+        333.141492,
+        333.284224,
+        333.676882,
+        335.02684,
+        333.727191,
+        335.066477,
+        333.742817,
+        334.115561,
+        333.267263,
+        332.434879,
+        332.197912
+      ]
+    }
+  },
+  "parity": {
+    "max_abs_error": 3.0517578125e-05,
+    "atol": 0.001,
+    "rtol": 0.0001
+  },
+  "fixture": {
+    "file": "cuda-policy-compiled.observations.npz",
+    "sha256": "0e2616b6312a6f0682a7307682e4701011499a473f80ee734f570d438cccd60f",
+    "seed": 7
+  },
+  "versions": {
+    "torch": "2.14.0+cu126",
+    "lerobot": "0.4.4",
+    "numpy": "2.5.3"
+  },
+  "iterations": 20,
+  "warmup": 3,
+  "limitations": [
+    "CUDA full-policy replay of one fixed PushT observation history; not closed-loop task success.",
+    "End-to-end includes preprocessing, encoder, history and sampling; excludes camera capture, IPC and robot delivery.",
+    "RSS is peak process high-water memory; CUDA frees the FlowEdge engine before loading the PyTorch U-Net, so both U-Nets are not device-resident together.",
+    "Allocations are unmeasured; no zero-allocation claim applies to this Python visual pipeline.",
+    "Startup excludes interpreter/import time and uses the existing filesystem cache.",
+    "Small iteration counts do not establish stable p99 estimates.",
+    "CUDA device name is the headline; host threads record leftover CPU work, not a GPU fair-compare.",
+    "Not Jetson/ARM evidence. Not TensorRT/ONNX.",
+    "A 4GB GPU cannot hold the FlowEdge resident DDIM and the PyTorch U-Net at once."
+  ]
+}

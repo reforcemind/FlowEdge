@@ -7,7 +7,7 @@
 
 | Artifact | Path | Runtime | Allocation contract | Status |
 |---|---|---|---|---|
-| Mamba / supported flow checkpoint | `convert/convert.py` → `.safetensors` | FlowEdge Core | Zero after setup | Supported |
+| Mamba / supported flow checkpoint | `tools/conversion/convert.py` → `.safetensors` | FlowEdge Core | Zero after setup | Supported |
 | LeRobot `diffusion_pusht` directory | `policy_inspect.py` → converter → `flowedge-lerobot` | Core + companion | Zero in native inference after setup | Supported |
 | Fixed-shape one-I/O ONNX policy | `flowedge-onnx` | Optional ONNX Runtime | External runtime; measure separately | Supported adapter |
 | ExecuTorch `.pte` | Future companion adapter | ExecuTorch | External runtime; measure separately | Planned |
@@ -18,7 +18,7 @@ input/output pair at setup, has no dependency from Core or Relay, and reports op
 failures instead of silently falling back.
 
 ```bash
-python convert/policy_inspect.py policy_dir --json
+python tools/conversion/policy_inspect.py policy_dir --json
 python -m pip install -e 'integrations/onnx[runtime]'
 ```
 

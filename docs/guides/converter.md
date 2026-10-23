@@ -86,4 +86,4 @@ action steps, and U-Net widths come from the checkpoint. Unsupported schedules,
 prediction modes, normalization, geometry, or U-Net variants fail with a
 specific conversion error.
 
-Source: `convert/convert.py`. See [ADR 0006](../decisions/0006-obs-encoder-out-of-scope).
+Source: `tools/conversion/convert.py`. See [ADR 0006](../decisions/0006-obs-encoder-out-of-scope).

@@ -98,7 +98,7 @@ ctest --test-dir build --output-on-failure
 
 The benchmark measures the complete allocation-free local path: compact producer serialization,
 condition ring, EDF queue, cooperative head worker, action ring, and consumer validation.
-`scripts/relay_bench.sh` performs the
+`tools/scripts/relay_bench.sh` performs the
 same build and run on Linux or Git Bash. The daemon uses `--create` when it owns both rings and
 `--trace FILE` to record accepted inputs and published outputs.
 
@@ -166,7 +166,7 @@ outer workers across available NUMA nodes.
 For a runnable source-level `RelayClient` integration plus deadline and trace handling, use:
 
 ```bash
-FLOWEDGE_BUILD_DIR="$PWD/build-relay" ./scripts/relay_demo.sh models/mamba_flow.safetensors
+FLOWEDGE_BUILD_DIR="$PWD/build-relay" ./tools/scripts/relay_demo.sh models/mamba_flow.safetensors
 ```
 
 The client implementation is also demonstrated directly in `examples/relay/relay_client_sample.cc`.
@@ -174,7 +174,7 @@ The client implementation is also demonstrated directly in `examples/relay/relay
 The managed generic-job path is runnable with one command:
 
 ```bash
-FLOWEDGE_BUILD_DIR="$PWD/build-relay" ./scripts/job_demo.sh models/mamba_flow.safetensors
+FLOWEDGE_BUILD_DIR="$PWD/build-relay" ./tools/scripts/job_demo.sh models/mamba_flow.safetensors
 ```
 
 `flowedge-jobd` keeps job request/result traffic separate from status, drain, resume, recovery, and shutdown

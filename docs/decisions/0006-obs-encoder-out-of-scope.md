@@ -1,6 +1,6 @@
 # ADR 0006: Observation encoders are out of scope
 
-Status: Accepted. Scope: `src/core/heads/`, `convert/`.
+Status: Accepted. Scope: `src/core/heads/`, `tools/conversion/`.
 
 ## Context
 

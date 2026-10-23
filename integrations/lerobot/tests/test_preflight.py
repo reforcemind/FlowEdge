@@ -1,5 +1,5 @@
-import io
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
@@ -8,10 +8,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from flowedge_lerobot.preflight import _exercise, _latency_summary, main
+from flowedge_lerobot.preflight import _exercise, _latency_summary, main, run_preflight
 
 
 class PreflightTests(unittest.TestCase):
+    def test_smolvla_cuda_request_is_explicitly_rejected(self):
+        with patch(
+            "flowedge_lerobot.deployment.validate_deployment_package",
+            return_value={"manifest": {"policy_type": "flowedge_smolvla"}},
+        ):
+            with self.assertRaisesRegex(ValueError, "requires device=cpu"):
+                run_preflight("fixture", device="cuda")
+
     def test_latency_summary_interpolates_percentiles(self):
         summary = _latency_summary([1.0, 2.0, 3.0])
         self.assertEqual(summary["p50_ms"], 2.0)

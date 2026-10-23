@@ -36,7 +36,7 @@ the same immutable weights, and finishes without replaying the prefix.
 
 ```bash
 FLOWEDGE_BUILD_DIR="$PWD/build-relay" \
-  ./scripts/relay_demo.sh models/mamba_flow.safetensors
+  ./tools/scripts/relay_demo.sh models/mamba_flow.safetensors
 ```
 
 The script performs all of these operations:

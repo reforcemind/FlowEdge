@@ -15,7 +15,7 @@ those rows.
 python -m flowedge_dev bench policy models/policy.safetensors \
   --source models/diffusion_pusht --revision <revision> \
   --steps 10 --iterations 100 --warmup 5 --threads 1 \
-  --output bench/artifacts/policy/diffusion-pusht-report.json
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-report.json
 ```
 
 The published CPU replay used `--threads 1`. CUDA matched replay uses
@@ -45,8 +45,8 @@ Validate an existing artifact with:
 
 ```bash
 python -m flowedge_dev bench artifact \
-  bench/artifacts/policy/diffusion-pusht-report.json \
-  --report bench/artifacts/policy/diffusion-pusht-report.md
+  tools/benchmark/artifacts/policy/diffusion-pusht-report.json \
+  --report tools/benchmark/artifacts/policy/diffusion-pusht-report.md
 ```
 
 Small runs are smoke checks, not stable p99 evidence. Repeat on the target

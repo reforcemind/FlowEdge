@@ -5,22 +5,21 @@ Native FlowEdge still owns only the converted denoiser and action unnormalizatio
 The RGB encoder may run on CPU or CUDA; Core still sees a host condition vector.
 """
 
-from collections import deque
-from dataclasses import fields
 import hashlib
 import json
+from collections import deque
+from dataclasses import fields
 from pathlib import Path
 
 import numpy as np
 import torch
-from safetensors import safe_open
-
 from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionRgbEncoder
 from lerobot.policies.diffusion.processor_diffusion import (
     make_diffusion_pre_post_processors,
 )
+from safetensors import safe_open
 
 
 def _sha256(path):
@@ -31,8 +30,8 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def validate_source_pair(converted, directory):
-    """Reject an encoder from a different training checkpoint before inference."""
+def validate_source_pair(converted, directory, *, verify_weights=True):
+    """Check converted/source identities, optionally hashing source weights."""
     directory = Path(directory)
     with safe_open(converted, framework="numpy") as weights:
         metadata = weights.metadata() or {}
@@ -42,18 +41,24 @@ def validate_source_pair(converted, directory):
             config, sort_keys=True, separators=(",", ":"), ensure_ascii=True
         ).encode("utf-8")
     ).hexdigest()
-    source_hash = _sha256(directory / "model.safetensors")
+    source_weights = directory / "model.safetensors"
+    if not source_weights.is_file():
+        raise FileNotFoundError(f"source checkpoint is missing {source_weights.name}")
     manifest_path = directory / "flowedge-source.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("schema") != 1:
             raise ValueError("unsupported FlowEdge source package schema")
-        if (
-            manifest.get("encoder_model_sha256") != source_hash
-            or manifest.get("source_config_sha256") != config_hash
-        ):
+        encoder_hash = manifest.get("encoder_model_sha256")
+        source_hash = manifest.get("original_model_sha256")
+        if manifest.get("source_config_sha256") != config_hash:
             raise ValueError("FlowEdge source package integrity mismatch")
-        source_hash = manifest.get("original_model_sha256", "")
+        if verify_weights and _sha256(source_weights) != encoder_hash:
+            raise ValueError("FlowEdge source package integrity mismatch")
+    else:
+        encoder_hash = source_hash = _sha256(source_weights)
+    if not isinstance(encoder_hash, str) or not isinstance(source_hash, str):
+        raise TypeError("FlowEdge source package checkpoint identities must be strings")
     if (
         metadata.get("flowedge.source_sha256") != source_hash
         or metadata.get("flowedge.source_config_sha256") != config_hash
@@ -64,6 +69,7 @@ def validate_source_pair(converted, directory):
     return {
         "source_sha256": source_hash,
         "source_config_sha256": config_hash,
+        "source_encoder_sha256": encoder_hash,
     }
 
 
@@ -106,7 +112,7 @@ def source_stats(directory, config):
             prefix = "normalize_inputs.buffer_" + name.replace(".", "_") + "."
             values = {
                 k[len(prefix) :]: torch.from_numpy(weights.get_tensor(k).copy())
-                for k in weights.keys()
+                for k in weights.keys()  # noqa: SIM118 - safe_open is not iterable
                 if k.startswith(prefix)
             }
             if values:
@@ -127,7 +133,7 @@ def source_stats(directory, config):
                         k[len(name) + 1 :]: torch.from_numpy(
                             weights.get_tensor(k).copy()
                         )
-                        for k in weights.keys()
+                        for k in weights.keys()  # noqa: SIM118 - safe_open is not iterable
                         if k.startswith(name + ".")
                     }
                     if values:
@@ -182,7 +188,7 @@ class DiffusionObservationEncoder:
             prefix = "diffusion.rgb_encoder."
             state = {
                 k[len(prefix) :]: torch.from_numpy(weights.get_tensor(k).copy())
-                for k in weights.keys()
+                for k in weights.keys()  # noqa: SIM118 - safe_open is not iterable
                 if k.startswith(prefix)
             }
         self.rgb_encoder.load_state_dict(state, strict=True)

@@ -23,7 +23,7 @@ Use Core when the policy and the controller share a process. Use Relay when a se
 | Keep an existing encoder | `external_flow_sample` |
 | Streaming Mamba | `mamba_forward` |
 | Snapshot / restore | `streaming_snapshot` |
-| Cross-process actions | `scripts/relay_demo.sh` |
+| Cross-process actions | `tools/scripts/relay_demo.sh` |
 | Faster control loop | `action_delivery_sample` |
 | vs PyTorch | `python -m flowedge_dev bench policy` |
 
@@ -33,9 +33,9 @@ Use Core when the policy and the controller share a process. Use Relay when a se
 |---|---|
 | Backends | CPU scalar / AVX2 / NEON. `FLOWEDGE_BACKEND=cuda` (nvcc): Mamba, flow, and DP heads device-resident; CUDA OOM at load keeps CPU kernels. Tenstorrent (TT-Metal) is a research track, not a download |
 | Backbones | Mamba. Transformer CPU decoder fixture (not a policy) |
-| Heads | flow matching (Euler / Heun / RK4); Diffusion Policy (DDIM / DDPM); SmolVLA expert soon |
+| Heads | flow matching (Euler / Heun / RK4); Diffusion Policy (DDIM / DDPM); experimental SmolVLA action expert |
 | Models | `mamba_flow`; `diffusion_pusht`. π0 / DiT / native VLM no |
-| Precisions | FP32 / BF16. INT8 no |
+| Precisions | FP32 / BF16; experimental approximate FP16 for selected CUDA Diffusion Policy layers. INT8 no |
 | Weights | `.safetensors`; shared immutable worker weights |
 | State | Versioned snapshots; exact restore |
 | Relay | Shared memory; EDF; 1–8 workers; action delivery |

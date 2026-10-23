@@ -55,7 +55,7 @@ python -m flowedge_dev verify transformer \
   models/tiny-gpt2 models/tiny-gpt2.flowedge.safetensors \
   --binary build/transformer_forward \
   --model-id sshleifer/tiny-gpt2 \
-  --output bench/artifacts/transformer/tiny-gpt2-transformer-reference.json
+  --output tools/benchmark/artifacts/transformer/tiny-gpt2-transformer-reference.json
 ```
 
 This validates real checkpoint conversion, full-prefix execution, and streaming
@@ -65,12 +65,12 @@ Optional local GPT-2 (same converter, larger weights; not required for CI):
 
 ```bash
 hf download openai-community/gpt2 --local-dir models/gpt2
-python convert/convert.py models/gpt2 models/gpt2.flowedge.safetensors --arch transformer
+python tools/conversion/convert.py models/gpt2 models/gpt2.flowedge.safetensors --arch transformer
 python -m flowedge_dev verify transformer \
   models/gpt2 models/gpt2.flowedge.safetensors \
   --binary build/transformer_forward \
   --model-id openai-community/gpt2 --revision main \
-  --output bench/artifacts/transformer/gpt2-transformer-reference.json
+  --output tools/benchmark/artifacts/transformer/gpt2-transformer-reference.json
 ```
 
 Record decoder latency on this host (not a policy p50):
@@ -78,7 +78,7 @@ Record decoder latency on this host (not a policy p50):
 ```bash
 build/transformer_latency models/tiny-gpt2.flowedge.safetensors \
   --threads 0 --warmup 5 --iters 20 \
-  --output bench/artifacts/transformer/tiny-gpt2-latency.json \
+  --output tools/benchmark/artifacts/transformer/tiny-gpt2-latency.json \
   1 2 3 4
 ```
 
@@ -88,7 +88,7 @@ Python module must be built with `FLOWEDGE_PYTHON=ON`):
 ```bash
 python tools/verification/verify_transformer_embeddings.py \
   models/tiny-gpt2.flowedge.safetensors --module-path build \
-  --output bench/artifacts/transformer/tiny-gpt2-transformer-embeddings.json
+  --output tools/benchmark/artifacts/transformer/tiny-gpt2-transformer-embeddings.json
 ```
 
 Check that the real checkpoint's streaming path performs no heap allocation
@@ -109,7 +109,7 @@ layout of the pinned `lerobot/smolvla_base` checkpoint before conversion:
 ```bash
 python tools/smolvla_preflight.py models/smolvla_base/model.safetensors \
   --config models/smolvla_base/config.json --hash \
-  --output bench/artifacts/smolvla/smolvla-base-preflight.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-base-preflight.json
 ```
 
 The resulting manifest establishes the real-source contract only. It records
@@ -125,7 +125,7 @@ the time MLP, and checkpoint-derived dimensions. Verify it against PyTorch with:
 python tools/verification/verify_smolvla_action_expert.py \
   models/smolvla_base/model.safetensors \
   --module-path build-research \
-  --output bench/artifacts/smolvla/smolvla-action-expert-suffix.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-action-expert-suffix.json
 ```
 
 This artifact is projection parity only. It does not execute the VLM image or
@@ -136,7 +136,7 @@ policy-construction record:
 
 ```bash
 python tools/verification/verify_smolvla_source.py models/smolvla_base \
-  --output bench/artifacts/smolvla/smolvla-base-upstream-load.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-base-upstream-load.json
 ```
 
 This proves only that the pinned upstream `SmolVLAPolicy` can construct from
@@ -212,7 +212,7 @@ python tools/verification/export_smolvla_expert_reference.py \
 python tools/verification/verify_smolvla_cached_expert.py \
   models/smolvla_base/model.safetensors smolvla-expert-reference.npz \
   --module-path build-research \
-  --output bench/artifacts/smolvla/smolvla-cached-expert.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-cached-expert.json
 ```
 
 The report is the required evidence for the cached-VLM action-expert path. It
@@ -235,7 +235,7 @@ python tools/verification/export_smolvla_expert_reference.py \
 python tools/verification/verify_smolvla_cached_trajectory.py \
   models/smolvla_base/model.safetensors smolvla-trajectory-reference.npz \
   --module-path build-research \
-  --output bench/artifacts/smolvla/smolvla-cached-trajectory.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-cached-trajectory.json
 ```
 
 This establishes expert-side Euler replay from an externally generated cache.
@@ -245,9 +245,9 @@ installed LeRobot provider and compared against the source action chunk:
 ```bash
 python tools/verification/verify_smolvla_hybrid.py \
   models/smolvla_base/model.safetensors models/smolvla_base \
-  bench/artifacts/smolvla/eslab-frame-000000.capture.npz \
+  tools/benchmark/artifacts/smolvla/eslab-frame-000000.capture.npz \
   --module-path build-research \
-  --output bench/artifacts/smolvla/eslab-frame-000000.hybrid-action.json
+  --output tools/benchmark/artifacts/smolvla/eslab-frame-000000.hybrid-action.json
 ```
 
 The resulting report covers source LeRobot image/state/language preprocessing,
@@ -274,5 +274,5 @@ For a portable evidence artifact, run the verifier against the same binary:
 python tools/verification/verify_smolvla_inspection.py \
   models/smolvla_base/model.safetensors \
   --binary build/flowedge-inspect \
-  --output bench/artifacts/smolvla/smolvla-base-inspection.json
+  --output tools/benchmark/artifacts/smolvla/smolvla-base-inspection.json
 ```

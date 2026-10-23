@@ -13,7 +13,6 @@ from typing import Any, Protocol
 
 import numpy as np
 
-
 SMOLVLA_ACTION_EXPERT_ARCHITECTURE = 7
 SMOLVLA_KEY_VALUE_WIDTH = 320
 
@@ -62,14 +61,21 @@ class SmolVLAActionContract:
         if missing:
             raise ValueError(f"missing SmolVLA model metadata: {', '.join(missing)}")
         if int(metadata["architecture"]) != SMOLVLA_ACTION_EXPERT_ARCHITECTURE:
-            raise ValueError("engine is not a FlowEdge SmolVLA action-expert checkpoint")
+            raise ValueError(
+                "engine is not a FlowEdge SmolVLA action-expert checkpoint"
+            )
         contract = cls(
             max_action_dim=int(metadata["action_dim"]),
             chunk_size=int(metadata["action_horizon"]),
             expert_layers=int(metadata["n_layers"]),
         )
-        if min(contract.max_action_dim, contract.chunk_size, contract.expert_layers) <= 0:
-            raise ValueError("SmolVLA action-expert metadata must contain positive dimensions")
+        if (
+            min(contract.max_action_dim, contract.chunk_size, contract.expert_layers)
+            <= 0
+        ):
+            raise ValueError(
+                "SmolVLA action-expert metadata must contain positive dimensions"
+            )
         return contract
 
 
@@ -131,7 +137,9 @@ class FlowEdgeSmolVLACachedExpert:
     ):
         self.contract = SmolVLAActionContract.from_metadata(engine.model_metadata)
         if action_dim <= 0 or action_dim > self.contract.max_action_dim:
-            raise ValueError("action_dim must be within the checkpoint's padded action dimension")
+            raise ValueError(
+                "action_dim must be within the checkpoint's padded action dimension"
+            )
         if action_steps is None:
             action_steps = self.contract.chunk_size
         if action_steps <= 0 or action_steps > self.contract.chunk_size:
@@ -167,11 +175,15 @@ class FlowEdgeSmolVLACachedExpert:
             or not output.flags.c_contiguous
             or output.shape != shape
         ):
-            raise ValueError(f"output must be a C-contiguous float32 array with shape {shape}")
+            raise ValueError(
+                f"output must be a C-contiguous float32 array with shape {shape}"
+            )
 
     def _prepare_noise(self, noise: np.ndarray | None) -> None:
         if noise is None:
-            self._rng.standard_normal(self._noise.shape, dtype=np.float32, out=self._noise)
+            self._rng.standard_normal(
+                self._noise.shape, dtype=np.float32, out=self._noise
+            )
             return
         candidate = np.asarray(noise)
         if (
@@ -207,7 +219,9 @@ class FlowEdgeSmolVLACachedExpert:
             or sampled.shape != self._padded_actions.shape
             or not np.isfinite(sampled).all()
         ):
-            raise RuntimeError("FlowEdge returned an invalid padded SmolVLA action chunk")
+            raise RuntimeError(
+                "FlowEdge returned an invalid padded SmolVLA action chunk"
+            )
         np.copyto(self._padded_actions, sampled)
         np.copyto(output, self._padded_actions[: self.action_steps, : self.action_dim])
 
@@ -238,7 +252,9 @@ class FlowEdgeSmolVLACachedExpert:
         """Write the next sampled action into caller-owned storage."""
         self._validate_output(output, (self.action_dim,))
         if self._next_action >= self.action_steps:
-            raise RuntimeError("no sampled SmolVLA actions remain; call refill with a fresh VLM cache")
+            raise RuntimeError(
+                "no sampled SmolVLA actions remain; call refill with a fresh VLM cache"
+            )
         np.copyto(output, self._chunk[self._next_action])
         self._next_action += 1
         return output
@@ -258,12 +274,46 @@ class LeRobotSmolVLACacheProvider:
     RoPE-applied per-layer K/V tensors to CPU for the cache-bound executor.
     """
 
-    def __init__(self, source_policy: Any, *, expert_layers: int = 16, key_value_width: int = 320):
+    def __init__(
+        self, source_policy: Any, *, expert_layers: int = 16, key_value_width: int = 320
+    ):
         if expert_layers <= 0 or key_value_width <= 0:
             raise ValueError("expert_layers and key_value_width must be positive")
         self._source = source_policy
         self._expert_layers = expert_layers
         self._key_value_width = key_value_width
+
+    @staticmethod
+    def release_source_expert(source_policy: Any) -> None:
+        """Keep only the source prefix model after the native expert is loaded.
+
+        SmolVLA's prefix forward passes ``None`` for the expert embeddings. Its
+        layer mapper still indexes ``lm_expert.layers``, so a weightless module
+        supplies those absent entries without retaining the PyTorch expert.
+        """
+        import torch
+
+        model = source_policy.model
+        bridge = model.vlm_with_expert
+        expert = bridge.lm_expert
+        if not isinstance(expert, torch.nn.Module) or not hasattr(expert, "layers"):
+            raise ValueError("source SmolVLA has no removable action expert")
+
+        class PrefixOnlyExpert(torch.nn.Module):
+            def __init__(self, layers: int):
+                super().__init__()
+                self.layers = [None] * layers
+                self.norm = torch.nn.Identity()
+
+        bridge.lm_expert = PrefixOnlyExpert(len(expert.layers))
+        for name in (
+            "action_in_proj",
+            "action_out_proj",
+            "action_time_mlp_in",
+            "action_time_mlp_out",
+        ):
+            if hasattr(model, name):
+                setattr(model, name, None)
 
     def reset(self) -> None:
         """Reset the source policy's observation history before a new episode."""
@@ -275,9 +325,13 @@ class LeRobotSmolVLACacheProvider:
 
         if not isinstance(tensor, torch.Tensor):
             raise ValueError(f"source cache {name} is not a torch tensor")
-        value = tensor.detach().to(device="cpu", dtype=torch.float32).contiguous().numpy()
+        value = (
+            tensor.detach().to(device="cpu", dtype=torch.float32).contiguous().numpy()
+        )
         if value.ndim != 4 or value.shape[0] != 1:
-            raise ValueError(f"source cache {name} must have shape [1, prefix, heads, head_dim]")
+            raise ValueError(
+                f"source cache {name} must have shape [1, prefix, heads, head_dim]"
+            )
         prefix_length = value.shape[1]
         flattened = value.reshape(prefix_length, -1)
         if flattened.shape != (prefix_length, expected_width):
@@ -339,9 +393,13 @@ class LeRobotSmolVLACacheProvider:
             keys_tensor = layer_cache.get("key_states")
             values_tensor = layer_cache.get("value_states")
             if keys_tensor is None or values_tensor is None:
-                raise ValueError(f"source VLM cache layer {layer} has no key/value tensors")
+                raise ValueError(
+                    f"source VLM cache layer {layer} has no key/value tensors"
+                )
             keys.append(
-                self._cache_tensor(keys_tensor, f"layer {layer} keys", self._key_value_width)
+                self._cache_tensor(
+                    keys_tensor, f"layer {layer} keys", self._key_value_width
+                )
             )
             values.append(
                 self._cache_tensor(

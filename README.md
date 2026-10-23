@@ -92,7 +92,7 @@ Relay is optional and is not used by the in-process Diffusion Policy replay.
 ```bash
 cmake -S . -B build-relay -DCMAKE_BUILD_TYPE=Release -DFLOWEDGE_RELAY=ON
 cmake --build build-relay -j
-FLOWEDGE_BUILD_DIR=build-relay ./scripts/relay_demo.sh \
+FLOWEDGE_BUILD_DIR=build-relay ./tools/scripts/relay_demo.sh \
   models/mamba_flow.safetensors
 ```
 
@@ -110,11 +110,11 @@ The full merge gate runs locally because checkpoint parity is not part of the
 normal GitHub Actions test job.
 
 ```bash
-./scripts/verify_all.sh models/mamba_flow.safetensors
+./tools/scripts/verify_all.sh models/mamba_flow.safetensors
 ```
 
 ```powershell
-powershell -File scripts/verify_local.ps1 -BuildDir build-win-clang
+powershell -File tools/scripts/verify_local.ps1 -BuildDir build-win-clang
 ```
 
 Focused commands are available through the maintainer CLI:
