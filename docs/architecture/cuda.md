@@ -70,6 +70,17 @@ PYTHONPATH=build-cuda python tools/verification/benchmark_cuda_tensor_boundary.p
   models/diffusion_pusht.flowedge.safetensors
 ```
 
+The default CUDA targets include `sm_87` for Jetson Orin; override
+`CMAKE_CUDA_ARCHITECTURES` when building for a different device set.
+On the Orin itself, the native preset builds only `sm_87` and enables the
+Python module:
+
+```bash
+cmake --preset jetson-orin
+cmake --build --preset jetson-orin
+PYTHONPATH=build/jetson-orin python -c "import flowedge; print(flowedge)"
+```
+
 Same checkpoint, same noise: compare those binaries to CPU `flow_sample` /
 `diffusion_sample`. Matched full-policy CUDA vs PyTorch CUDA on GTX 1650 is
 {download}`diffusion-pusht-cuda-replay.md <../../tools/benchmark/artifacts/policy/diffusion-pusht-cuda-replay.md>`:
