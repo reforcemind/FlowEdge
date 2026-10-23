@@ -22,7 +22,8 @@ reject_source_pattern() {
   fi
 }
 
-find "$ROOT/src" "$ROOT/bench" "$ROOT/test" "$ROOT/examples" "$ROOT/convert" \
+find "$ROOT/src" "$ROOT/tools/benchmark" "$ROOT/test" "$ROOT/examples" \
+  "$ROOT/tools/conversion" \
   -type f \( -name "*.h" -o -name "*.cc" -o -name "*.cpp" \) -print0 \
   | xargs -0 clang-format --style=file --Werror "$FORMAT_FLAG"
 
@@ -53,7 +54,7 @@ if [ -f "$BUILD_DIR/compile_commands.json" ]; then
   fi
   "$PY" -c "import json, sys
 print('\0'.join(e['file'] for e in json.load(sys.stdin)
-                if not any(x in e['file'].replace(chr(92), '/') for x in ['/bench/', '/test/', '/python/', '/_deps/'])), end='')" \
+                if not any(x in e['file'].replace(chr(92), '/') for x in ['/tools/benchmark/', '/test/', '/python/', '/_deps/'])), end='')" \
     < "$BUILD_DIR/compile_commands.json" \
     | xargs -0 -n 1 clang-tidy -p "$BUILD_DIR" ${FIX:+--fix}
 else

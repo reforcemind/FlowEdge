@@ -1,5 +1,5 @@
-#include "tools/benchmark/runtime/deadline_profile.h"
 #include "protocol/deadline_flow.h"
+#include "tools/benchmark/runtime/deadline_profile.h"
 
 #include <array>
 #include <gtest/gtest.h>
