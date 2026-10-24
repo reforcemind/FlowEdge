@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "jetson-orin",
+      "displayName": "Jetson Orin (native CUDA, sm_87)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/jetson-orin",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CUDA_ARCHITECTURES": "87",
+        "FLOWEDGE_BACKEND": "cuda",
+        "FLOWEDGE_PYTHON": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "jetson-orin",
+      "configurePreset": "jetson-orin",
+      "jobs": 2
+    }
+  ]
+}

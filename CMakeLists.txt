@@ -32,6 +32,11 @@ set(FLOWEDGE_RELAY_MAX_JOB_PAYLOAD_BYTES "65536" CACHE STRING
 set(FLOWEDGE_BACKEND "cpu" CACHE STRING "Kernel backend: cpu, avx512, scalar, or cuda")
 set_property(CACHE FLOWEDGE_BACKEND PROPERTY STRINGS cpu avx512 scalar cuda)
 if(FLOWEDGE_BACKEND STREQUAL "cuda")
+  # Set this before enabling CUDA: the compiler initialization otherwise
+  # supplies its own default (which may omit supported FlowEdge targets).
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES 75 86 87 89)
+  endif()
   include(CheckLanguage)
   check_language(CUDA)
   if(NOT CMAKE_CUDA_COMPILER)
@@ -39,9 +44,6 @@ if(FLOWEDGE_BACKEND STREQUAL "cuda")
       "FLOWEDGE_BACKEND=cuda requires nvcc. Install the CUDA toolkit, or keep FLOWEDGE_BACKEND=cpu.")
   endif()
   enable_language(CUDA)
-  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
-    set(CMAKE_CUDA_ARCHITECTURES 75 86 89)
-  endif()
 endif()
 
 # CORE
