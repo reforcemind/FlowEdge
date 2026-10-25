@@ -12,13 +12,17 @@ from flowedge_lerobot.preflight import _exercise, _latency_summary, main, run_pr
 
 
 class PreflightTests(unittest.TestCase):
-    def test_smolvla_cuda_request_is_explicitly_rejected(self):
-        with patch(
-            "flowedge_lerobot.deployment.validate_deployment_package",
-            return_value={"manifest": {"policy_type": "flowedge_smolvla"}},
+    def test_smolvla_cuda_preflight_checks_torch_before_loading_policy(self):
+        fake_torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+        with (
+            patch(
+                "flowedge_lerobot.deployment.validate_deployment_package",
+                return_value={"manifest": {"policy_type": "flowedge_smolvla"}},
+            ),
+            patch.dict("sys.modules", {"torch": fake_torch}),
+            self.assertRaisesRegex(RuntimeError, "PyTorch CUDA is unavailable"),
         ):
-            with self.assertRaisesRegex(ValueError, "requires device=cpu"):
-                run_preflight("fixture", device="cuda")
+            run_preflight("fixture", device="cuda")
 
     def test_latency_summary_interpolates_percentiles(self):
         summary = _latency_summary([1.0, 2.0, 3.0])
@@ -65,12 +69,14 @@ class PreflightTests(unittest.TestCase):
     def test_failure_is_written_as_machine_readable_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp, "report.json")
-            with patch(
-                "flowedge_lerobot.preflight.run_preflight",
-                side_effect=ValueError("bad package"),
+            with (
+                patch(
+                    "flowedge_lerobot.preflight.run_preflight",
+                    side_effect=ValueError("bad package"),
+                ),
+                redirect_stdout(io.StringIO()),
             ):
-                with redirect_stdout(io.StringIO()):
-                    result = main(["missing", "--output", str(output)])
+                result = main(["missing", "--output", str(output)])
             report = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual(result, 1)
         self.assertEqual(report["status"], "error")

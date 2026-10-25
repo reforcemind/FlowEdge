@@ -106,6 +106,13 @@ velocity_padded = smolvla.smolvla_denoise(
 actions_padded = smolvla.smolvla_sample(
     initial_noise, prefix_keys, prefix_values, prefix_mask, steps=10
 )
+
+# Reuse a caller-owned output buffer in a control loop to avoid allocating a
+# new result array for each action chunk.
+action_buffer = np.empty_like(initial_noise)
+smolvla.smolvla_sample_into(
+    initial_noise, prefix_keys, prefix_values, prefix_mask, action_buffer, steps=10
+)
 ```
 
 This does not run LeRobot observation preprocessing, image/language encoding,

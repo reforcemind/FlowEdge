@@ -27,17 +27,15 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
         cache_provider = kwargs.pop("cache_provider", None)
         super().__init__(config, *args, **kwargs)
         config.validate_features()
-        from flowedge_lerobot.device import config_device
+        from flowedge_lerobot.device import config_device, require_torch_cuda
 
         device = config_device(config)
+        require_torch_cuda(device, torch)
         action_dim = int(config.action_feature.shape[0])
         if expert is None:
             import flowedge
-            from flowedge_lerobot.device import require_native_device
 
-            require_native_device(device, flowedge)
             engine = flowedge.Engine(config.checkpoint_path)
-            require_native_device(device, flowedge, engine=engine)
             expert = FlowEdgeSmolVLACachedExpert(
                 engine,
                 action_dim=action_dim,

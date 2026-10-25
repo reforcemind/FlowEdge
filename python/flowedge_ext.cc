@@ -495,34 +495,34 @@ public:
     const FloatBuffer prefix_keys{keys_array};
     const FloatBuffer prefix_values{values_array};
     const UInt8Buffer prefix_mask{mask_array};
-    fe_model_metadata metadata{};
-    if (fe_engine_model_metadata(engine_, &metadata) != 0)
-      throw std::runtime_error(fe_engine_last_error());
-    const std::size_t action_dim = static_cast<std::size_t>(metadata.action_dim);
-    const std::size_t expert_layers = static_cast<std::size_t>(metadata.n_layers);
-    if (metadata.architecture != FE_ARCH_SMOLVLA_ACTION_EXPERT || action_dim == 0uz ||
-        expert_layers == 0uz || steps == 0uz || steps > 100uz || noise.size() == 0uz ||
-        noise.size() % action_dim != 0uz || prefix_mask.size() == 0uz ||
-        prefix_keys.size() != prefix_values.size() ||
-        prefix_mask.size() > std::numeric_limits<std::size_t>::max() / expert_layers ||
-        prefix_mask.size() * expert_layers > std::numeric_limits<std::size_t>::max() / 320uz ||
-        prefix_keys.size() != prefix_mask.size() * expert_layers * 320uz)
-      throw std::runtime_error(
-          "expected SmolVLA initial noise [chunk, max_action_dim], 1..100 Euler steps, matching "
-          "layer-major F32 VLM K/V caches, and a nonempty uint8 prefix mask");
+    const std::size_t action_dim =
+        validate_smolvla_sample(noise, prefix_keys, prefix_values, prefix_mask, steps);
     const std::size_t chunk_size = noise.size() / action_dim;
     py::object out = float_matrix(numpy_, chunk_size, action_dim);
     FloatBuffer output{out, true};
-    int rc{0};
-    {
-      py::gil_scoped_release release;
-      rc = fe_engine_smolvla_sample(engine_, noise.data(), chunk_size, steps, prefix_keys.data(),
-                                    prefix_values.data(), prefix_mask.data(), prefix_mask.size(),
-                                    output.mutable_data());
-    }
-    if (rc != 0)
-      throw std::runtime_error(fe_engine_last_error());
+    smolvla_sample_native(noise, prefix_keys, prefix_values, prefix_mask, chunk_size, steps,
+                          output);
     return out;
+  }
+
+  void smolvla_sample_into(py::handle initial_noise_object, py::handle prefix_keys_object,
+                           py::handle prefix_values_object, py::handle prefix_mask_object,
+                           py::handle output_object, std::size_t steps)
+  {
+    py::object noise_array = contiguous_array(numpy_, initial_noise_object, "float32");
+    py::object keys_array = contiguous_array(numpy_, prefix_keys_object, "float32");
+    py::object values_array = contiguous_array(numpy_, prefix_values_object, "float32");
+    py::object mask_array = contiguous_array(numpy_, prefix_mask_object, "uint8");
+    const FloatBuffer noise{noise_array};
+    const FloatBuffer prefix_keys{keys_array};
+    const FloatBuffer prefix_values{values_array};
+    const UInt8Buffer prefix_mask{mask_array};
+    FloatBuffer output{output_object, true};
+    const std::size_t action_dim =
+        validate_smolvla_sample(noise, prefix_keys, prefix_values, prefix_mask, steps);
+    const std::size_t chunk_size = noise.size() / action_dim;
+    smolvla_sample_native(noise, prefix_keys, prefix_values, prefix_mask, chunk_size, steps,
+                          output);
   }
 
   void run_embeddings_masked_native(const FloatBuffer& embeddings, const UInt8Buffer& mask,
@@ -784,6 +784,47 @@ public:
   }
 
 private:
+  [[nodiscard]] std::size_t validate_smolvla_sample(const FloatBuffer& noise,
+                                                    const FloatBuffer& prefix_keys,
+                                                    const FloatBuffer& prefix_values,
+                                                    const UInt8Buffer& prefix_mask,
+                                                    std::size_t steps) const
+  {
+    fe_model_metadata metadata{};
+    if (fe_engine_model_metadata(engine_, &metadata) != 0)
+      throw std::runtime_error(fe_engine_last_error());
+    const std::size_t action_dim = static_cast<std::size_t>(metadata.action_dim);
+    const std::size_t expert_layers = static_cast<std::size_t>(metadata.n_layers);
+    if (metadata.architecture != FE_ARCH_SMOLVLA_ACTION_EXPERT || action_dim == 0uz ||
+        expert_layers == 0uz || steps == 0uz || steps > 100uz || noise.size() == 0uz ||
+        noise.size() % action_dim != 0uz || prefix_mask.size() == 0uz ||
+        prefix_keys.size() != prefix_values.size() ||
+        prefix_mask.size() > std::numeric_limits<std::size_t>::max() / expert_layers ||
+        prefix_mask.size() * expert_layers > std::numeric_limits<std::size_t>::max() / 320uz ||
+        prefix_keys.size() != prefix_mask.size() * expert_layers * 320uz)
+      throw std::runtime_error(
+          "expected SmolVLA initial noise [chunk, max_action_dim], 1..100 Euler steps, matching "
+          "layer-major F32 VLM K/V caches, and a nonempty uint8 prefix mask");
+    return action_dim;
+  }
+
+  void smolvla_sample_native(const FloatBuffer& noise, const FloatBuffer& prefix_keys,
+                             const FloatBuffer& prefix_values, const UInt8Buffer& prefix_mask,
+                             std::size_t chunk_size, std::size_t steps, FloatBuffer& output)
+  {
+    if (output.size() != noise.size())
+      throw std::runtime_error("output size must equal initial noise size");
+    int rc{0};
+    {
+      py::gil_scoped_release release;
+      rc = fe_engine_smolvla_sample(engine_, noise.data(), chunk_size, steps, prefix_keys.data(),
+                                    prefix_values.data(), prefix_mask.data(), prefix_mask.size(),
+                                    output.mutable_data());
+    }
+    if (rc != 0)
+      throw std::runtime_error(fe_engine_last_error());
+  }
+
   [[nodiscard]] static std::string digest_hex(const fe_model_digest& digest)
   {
     constexpr char alphabet[] = "0123456789abcdef";
@@ -984,6 +1025,10 @@ PYBIND11_MODULE(flowedge, m)
            "sample a SmolVLA action chunk with Euler from a captured VLM K/V cache",
            py::arg("initial_noise"), py::arg("prefix_keys"), py::arg("prefix_values"),
            py::arg("prefix_mask"), py::arg("steps") = 10uz)
+      .def("smolvla_sample_into", &Engine::smolvla_sample_into,
+           "sample a SmolVLA action chunk into caller-owned contiguous float32 storage",
+           py::arg("initial_noise"), py::arg("prefix_keys"), py::arg("prefix_values"),
+           py::arg("prefix_mask"), py::arg("output"), py::arg("steps") = 10uz)
       .def("step", &Engine::step, py::arg("token"))
       .def("step_into", &Engine::step_into, py::arg("token"), py::arg("output"))
       .def("reset", &Engine::reset)

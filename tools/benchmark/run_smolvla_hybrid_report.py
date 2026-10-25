@@ -6,18 +6,19 @@ source measurement runs the installed PyTorch ``SmolVLAPolicy`` from prepared
 observation tensors. The hybrid measurement times source VLM-prefix/cache
 production followed by the native FlowEdge action expert. Camera capture,
 dataset decoding, network transport, and robot delivery are outside this
-benchmark.
+benchmark. Pass ``--device cuda`` to run the source VLM on PyTorch CUDA; the
+FlowEdge expert still runs on CPU, and CUDA work is synchronized for timing.
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import importlib.metadata
 import json
-from pathlib import Path
 import platform
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from time import perf_counter_ns
 
 import numpy as np
@@ -29,11 +30,20 @@ def quantiles(samples: list[float]) -> dict[str, float]:
     )
 
 
+def synchronize(device, torch) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("checkpoint", type=Path, help="FlowEdge SmolVLA action-expert safetensors")
+    parser.add_argument(
+        "checkpoint", type=Path, help="FlowEdge SmolVLA action-expert safetensors"
+    )
     parser.add_argument("model", type=Path, help="local lerobot/smolvla_base directory")
-    parser.add_argument("capture", type=Path, help="recorded source-pipeline .npz capture")
+    parser.add_argument(
+        "capture", type=Path, help="recorded source-pipeline .npz capture"
+    )
     parser.add_argument("--module-path", type=Path, required=True)
     parser.add_argument(
         "--plugin-path",
@@ -43,10 +53,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help="device for the source PyTorch SmolVLA VLM; FlowEdge expert remains on CPU",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if min(args.iterations, args.threads) <= 0 or args.warmup < 0:
-        parser.error("iterations and threads must be positive; warmup cannot be negative")
+        parser.error(
+            "iterations and threads must be positive; warmup cannot be negative"
+        )
 
     verification_path = Path(__file__).resolve().parents[1] / "verification"
     sys.path.insert(0, str(verification_path))
@@ -57,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
         import lerobot
         import torch
         import transformers
-        from flowedge_lerobot import FlowEdgeSmolVLACachedExpert, LeRobotSmolVLACacheProvider
+        from flowedge_lerobot import (
+            FlowEdgeSmolVLACachedExpert,
+            LeRobotSmolVLACacheProvider,
+        )
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
         from verify_smolvla_hybrid import (
             array_digest,
@@ -67,19 +88,33 @@ def main(argv: list[str] | None = None) -> int:
             required,
         )
 
-        if not args.checkpoint.is_file() or not args.model.is_dir() or not args.capture.is_file():
+        if (
+            not args.checkpoint.is_file()
+            or not args.model.is_dir()
+            or not args.capture.is_file()
+        ):
             raise ValueError("checkpoint, model directory, and capture must exist")
         torch.set_num_threads(args.threads)
+        device = torch.device(args.device)
+        if device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but torch.cuda is unavailable")
         policy = SmolVLAPolicy.from_pretrained(args.model).eval()
+        policy.config.device = args.device
+        policy.to(device)
         if policy.config.adapt_to_pi_aloha:
-            raise ValueError("benchmark does not support SmolVLA Aloha action postprocessing")
+            raise ValueError(
+                "benchmark does not support SmolVLA Aloha action postprocessing"
+            )
 
         with np.load(args.capture, allow_pickle=False) as capture:
             batch_size = 1
             state_dim = policy.config.robot_state_feature.shape[0]
             action_dim = policy.config.action_feature.shape[0]
             state = required(
-                capture, "observation.state", np.dtype("float32"), (batch_size, state_dim)
+                capture,
+                "observation.state",
+                np.dtype("float32"),
+                (batch_size, state_dim),
             )
             tokens = required(
                 capture,
@@ -104,30 +139,28 @@ def main(argv: list[str] | None = None) -> int:
         if not np.isfinite(state).all() or not np.isfinite(noise).all():
             raise ValueError("capture state and noise must be finite")
         batch = {
-            "observation.state": torch.from_numpy(state),
-            "observation.language.tokens": torch.from_numpy(tokens),
-            "observation.language.attention_mask": torch.from_numpy(language_mask),
+            "observation.state": torch.from_numpy(state).to(device),
+            "observation.language.tokens": torch.from_numpy(tokens).to(device),
+            "observation.language.attention_mask": torch.from_numpy(language_mask).to(
+                device
+            ),
         }
-        batch.update({key: torch.from_numpy(value) for key, value in images.items()})
-        noise_tensor = torch.from_numpy(noise)
-        native = flowedge.Engine(str(args.checkpoint), threads=args.threads)
-        provider = LeRobotSmolVLACacheProvider(policy)
-        hybrid = FlowEdgeSmolVLACachedExpert(
-            native,
-            action_dim=action_dim,
-            action_steps=policy.config.n_action_steps,
+        batch.update(
+            {key: torch.from_numpy(value).to(device) for key, value in images.items()}
         )
+        noise_tensor = torch.from_numpy(noise).to(device)
         expected_shape = (policy.config.n_action_steps, action_dim)
 
         source_samples: list[float] = []
+        source_actions: list[np.ndarray] = []
         prefix_samples: list[float] = []
         expert_samples: list[float] = []
         hybrid_samples: list[float] = []
         max_error = 0.0
         final_cache = None
+        total_runs = args.warmup + args.iterations
 
         def source_action() -> np.ndarray:
-            policy.reset()
             with torch.no_grad():
                 result = policy.predict_action_chunk(
                     clone_batch(batch, torch), noise=noise_tensor
@@ -137,16 +170,45 @@ def main(argv: list[str] | None = None) -> int:
                 raise RuntimeError("source policy emitted an invalid action chunk")
             return result
 
+        for iteration in range(total_runs):
+            policy.reset()
+            synchronize(device, torch)
+            source_start = perf_counter_ns()
+            source = source_action()
+            synchronize(device, torch)
+            source_elapsed = (perf_counter_ns() - source_start) / 1e6
+            source_actions.append(source)
+            if iteration >= args.warmup:
+                source_samples.append(source_elapsed)
+
+        # The deployed hybrid retains only the source VLM. Release the PyTorch
+        # action expert before timing it so its CUDA weights do not crowd the
+        # actual CUDA-VLM/CPU-expert path.
+        LeRobotSmolVLACacheProvider.release_source_expert(policy)
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+            synchronize(device, torch)
+        native = flowedge.Engine(str(args.checkpoint), threads=args.threads)
+        provider = LeRobotSmolVLACacheProvider(policy)
+        hybrid = FlowEdgeSmolVLACachedExpert(
+            native,
+            action_dim=action_dim,
+            action_steps=policy.config.n_action_steps,
+        )
+
         def hybrid_action() -> tuple[np.ndarray, float, float, float, object]:
             policy.reset()
+            synchronize(device, torch)
             started = perf_counter_ns()
             cache = provider(clone_batch(batch, torch))
+            synchronize(device, torch)
             prefix_done = perf_counter_ns()
             result = hybrid.predict_action_chunk(
                 cache,
                 noise=np.ascontiguousarray(noise[0]),
                 steps=policy.config.num_steps,
             )
+            synchronize(device, torch)
             finished = perf_counter_ns()
             if result.shape != expected_shape or not np.isfinite(result).all():
                 raise RuntimeError("hybrid path emitted an invalid action chunk")
@@ -158,18 +220,18 @@ def main(argv: list[str] | None = None) -> int:
                 cache,
             )
 
-        for iteration in range(args.warmup + args.iterations):
-            source_start = perf_counter_ns()
-            source = source_action()
-            source_elapsed = (perf_counter_ns() - source_start) / 1e6
-            result, prefix_elapsed, expert_elapsed, total_elapsed, final_cache = hybrid_action()
-            error = np.abs(result - source)
+        for iteration in range(total_runs):
+            result, prefix_elapsed, expert_elapsed, total_elapsed, final_cache = (
+                hybrid_action()
+            )
+            error = np.abs(result - source_actions[iteration])
             current_max = float(error.max())
             max_error = max(max_error, current_max)
             if current_max > 3e-2:
-                raise RuntimeError(f"hybrid action parity exceeded tolerance: actions={current_max}")
+                raise RuntimeError(
+                    f"hybrid action parity exceeded tolerance: actions={current_max}"
+                )
             if iteration >= args.warmup:
-                source_samples.append(source_elapsed)
                 prefix_samples.append(prefix_elapsed)
                 expert_samples.append(expert_elapsed)
                 hybrid_samples.append(total_elapsed)
@@ -217,6 +279,11 @@ def main(argv: list[str] | None = None) -> int:
             "cpu": platform.processor() or platform.machine(),
             "threads": args.threads,
             "native_threads": args.threads,
+            "source_vlm_device": str(device),
+            "flowedge_expert_device": "cpu",
+            "cuda_device": (
+                torch.cuda.get_device_name(device) if device.type == "cuda" else None
+            ),
             "compiler": flowedge.compiler,
             "build_type": flowedge.build_type,
         },
@@ -231,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             "Quantiles are not stable estimates when iterations is small; use a larger matched run for p99 claims.",
             "Prepared capture starts after camera capture, dataset decoding, tokenizer, and public processor I/O.",
             "The hybrid path keeps the VLM and preprocessing in LeRobot/PyTorch; it does not measure a native VLM implementation.",
+            "The source PyTorch and hybrid paths run in separate passes; source expert weights are released before hybrid timing.",
             "No controller queue, deadline, underrun, task-success, or control-quality measurement is included.",
         ],
         "scope": (
@@ -240,7 +308,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

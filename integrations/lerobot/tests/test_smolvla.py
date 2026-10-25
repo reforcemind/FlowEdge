@@ -1,7 +1,7 @@
 import unittest
+from typing import ClassVar
 
 import numpy as np
-
 from flowedge_lerobot import (
     FlowEdgeSmolVLACachedExpert,
     SmolVLAActionContract,
@@ -10,7 +10,7 @@ from flowedge_lerobot import (
 
 
 class FakeEngine:
-    model_metadata = {
+    model_metadata: ClassVar[dict[str, int]] = {
         "architecture": 7,
         "action_dim": 4,
         "action_horizon": 3,
@@ -25,6 +25,14 @@ class FakeEngine:
             (noise.copy(), prefix_keys, prefix_values, prefix_mask, steps)
         )
         return np.arange(12, dtype=np.float32).reshape(3, 4)
+
+    def smolvla_sample_into(
+        self, noise, prefix_keys, prefix_values, prefix_mask, output, steps
+    ):
+        self.calls.append(
+            (noise.copy(), prefix_keys, prefix_values, prefix_mask, output, steps)
+        )
+        np.copyto(output, np.arange(12, dtype=np.float32).reshape(3, 4))
 
 
 def cache():
@@ -44,9 +52,12 @@ class SmolVLAAdapterTests(unittest.TestCase):
 
     def test_refill_consumes_a_seeded_action_chunk(self):
         engine = FakeEngine()
-        policy = FlowEdgeSmolVLACachedExpert(engine, action_dim=2, action_steps=2, seed=7)
+        policy = FlowEdgeSmolVLACachedExpert(
+            engine, action_dim=2, action_steps=2, seed=7
+        )
 
         policy.refill(cache(), steps=9)
+        self.assertIs(engine.calls[0][-2], policy._padded_actions)
         np.testing.assert_array_equal(policy.take_action(), [0, 1])
         output = np.empty(2, dtype=np.float32)
         self.assertIs(policy.take_action_into(output), output)
@@ -70,6 +81,16 @@ class SmolVLAAdapterTests(unittest.TestCase):
         np.testing.assert_array_equal(actions, [[0, 1, 2], [4, 5, 6]])
         np.testing.assert_array_equal(engine.calls[0][0], noise)
 
+    def test_legacy_engine_uses_result_returning_sampler(self):
+        engine = FakeEngine()
+        engine.smolvla_sample_into = None
+        policy = FlowEdgeSmolVLACachedExpert(engine, action_dim=2)
+
+        actions = policy.predict_action_chunk(cache())
+
+        np.testing.assert_array_equal(actions, [[0, 1], [4, 5], [8, 9]])
+        self.assertEqual(len(engine.calls), 1)
+
     def test_cache_and_noise_contracts_accept_sparse_source_masks(self):
         policy = FlowEdgeSmolVLACachedExpert(FakeEngine(), action_dim=2)
         sparse_cache = SmolVLAKVCache(
@@ -90,7 +111,9 @@ class SmolVLAAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "binary array"):
                     policy.predict_action_chunk(invalid_mask)
         with self.assertRaisesRegex(ValueError, "full padded action shape"):
-            policy.predict_action_chunk(cache(), noise=np.zeros((3, 2), dtype=np.float32))
+            policy.predict_action_chunk(
+                cache(), noise=np.zeros((3, 2), dtype=np.float32)
+            )
 
 
 if __name__ == "__main__":

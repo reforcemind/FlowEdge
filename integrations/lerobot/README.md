@@ -15,7 +15,8 @@ FlowEdge replaces the supported action-generation step.
 FlowEdge's current published comparisons are PushT only: 851 vs 1409 ms on
 CPU (`threads=1`), and 131 vs 345 ms on a desktop GTX 1650. They are not
 Jetson or SO-100 performance results. The SmolVLA expert currently runs on CPU;
-the VLM is not native.
+the VLM is not native. Its optional CUDA mode runs the source VLM through
+PyTorch on CUDA, then copies the K/V cache to the CPU expert once per chunk.
 
 ## Install
 
@@ -31,8 +32,10 @@ Replace the example path with the CPython/platform wheel downloaded from the
 [v0.1.2 release](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2).
 For Diffusion Policy only, `[so100]` is enough; add `smolvla` for SmolVLA. Use
 `[so101]` instead of `so100` for an SO-101 follower. The LeRobot plugin supports LeRobot
-`>=0.6.1,<0.7`. CUDA requires a separately built FlowEdge CUDA runtime; it is
-not included in the published wheel.
+`>=0.6.1,<0.7`. CUDA requires a separately built FlowEdge CUDA runtime for
+native CUDA Diffusion Policy; it is not included in the published wheel.
+SmolVLA's hybrid CUDA-VLM/CPU-expert mode works with the CPU FlowEdge wheel and
+CUDA-enabled PyTorch.
 
 ## Python API
 
@@ -74,7 +77,9 @@ action = policy.select_action(observation, task="pick up the cube")
 postprocessed tensor shaped `(1, action_dim)`. It is not the named joint
 mapping accepted by a robot driver; LeRobot's rollout path performs that
 mapping. `policy.input_features` lists the expected observation keys and
-shapes. SmolVLA CUDA execution is not supported yet. For a remote SmolVLA base,
+shapes. For SmolVLA, `device="cuda"` places the source VLM on CUDA while the
+FlowEdge action expert stays on CPU; this is not a device-resident CUDA expert.
+For a remote SmolVLA base,
 pass `vlm_revision="<commit>"` to pin its tokenizer/config assets; the package
 manifest records the resolved revision and asset hashes.
 

@@ -209,11 +209,25 @@ class FlowEdgeSmolVLACachedExpert:
             raise ValueError("steps must be in [1, 100]")
         cache.validate(self.contract)
         self._prepare_noise(noise)
-        sampled = np.asarray(
-            self._engine.smolvla_sample(
-                self._noise, cache.keys, cache.values, cache.mask, steps=steps
+        # Native FlowEdge can fill the persistent buffer directly; older
+        # external engine wrappers keep using the result-returning API.
+        sample_into = getattr(self._engine, "smolvla_sample_into", None)
+        if callable(sample_into):
+            sample_into(
+                self._noise,
+                cache.keys,
+                cache.values,
+                cache.mask,
+                self._padded_actions,
+                steps=steps,
             )
-        )
+            sampled = self._padded_actions
+        else:
+            sampled = np.asarray(
+                self._engine.smolvla_sample(
+                    self._noise, cache.keys, cache.values, cache.mask, steps=steps
+                )
+            )
         if (
             sampled.dtype != np.float32
             or sampled.shape != self._padded_actions.shape
@@ -222,7 +236,8 @@ class FlowEdgeSmolVLACachedExpert:
             raise RuntimeError(
                 "FlowEdge returned an invalid padded SmolVLA action chunk"
             )
-        np.copyto(self._padded_actions, sampled)
+        if sampled is not self._padded_actions:
+            np.copyto(self._padded_actions, sampled)
         np.copyto(output, self._padded_actions[: self.action_steps, : self.action_dim])
 
     def predict_action_chunk(
@@ -324,7 +339,7 @@ class LeRobotSmolVLACacheProvider:
         import torch
 
         if not isinstance(tensor, torch.Tensor):
-            raise ValueError(f"source cache {name} is not a torch tensor")
+            raise TypeError(f"source cache {name} is not a torch tensor")
         value = (
             tensor.detach().to(device="cpu", dtype=torch.float32).contiguous().numpy()
         )
@@ -387,9 +402,11 @@ class LeRobotSmolVLACacheProvider:
         keys = []
         values = []
         for layer in range(self._expert_layers):
-            layer_cache = cache.get(layer)
-            if not isinstance(layer_cache, dict):
+            if layer not in cache:
                 raise ValueError(f"source VLM cache is missing layer {layer}")
+            layer_cache = cache[layer]
+            if not isinstance(layer_cache, dict):
+                raise TypeError(f"source VLM cache layer {layer} must be a mapping")
             keys_tensor = layer_cache.get("key_states")
             values_tensor = layer_cache.get("value_states")
             if keys_tensor is None or values_tensor is None:
