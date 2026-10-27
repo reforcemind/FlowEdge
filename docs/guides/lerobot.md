@@ -109,10 +109,12 @@ or downloading it from the Hub; a Hugging Face model repo ID can be passed
 directly as `--policy.path`. Commission with an unloaded arm and a short duration;
 limits and emergency stop remain LeRobot responsibilities.
 
-The example explicitly uses CPU. For a CUDA-enabled Diffusion Policy build,
-use `--device=cuda`; this requires both the CUDA FlowEdge runtime and
-CUDA-enabled PyTorch. The packaged config otherwise defaults to CPU. SmolVLA
-currently supports CPU only and rejects a CUDA request.
+The example explicitly uses CPU. For Diffusion Policy, `--device=cuda` requires
+both the CUDA FlowEdge runtime and CUDA-enabled PyTorch. For SmolVLA,
+`--device=cuda` places the source VLM on PyTorch CUDA while the native FlowEdge
+action expert remains on CPU; its per-layer VLM K/V cache is copied to host
+memory for each action chunk. This hybrid mode does not claim a CUDA-resident
+FlowEdge expert. The packaged config defaults to CPU.
 
 Run the installed no-robot preflight after copying the package to the deployment
 machine:
@@ -202,9 +204,12 @@ config/tokenizer assets; packaging may download those assets once. Pin the
 revision used by training when it is known. The manifest records the resolved
 revision and hashes of the bundled assets. The runtime drops
 the redundant source PyTorch expert after loading. This path currently runs
-the native expert on CPU and copies the VLM prefix cache to CPU. Do not use
-`--device cuda` with this SmolVLA package. The no-robot preflight may take
-minutes on a CPU and does not establish Jetson latency or robot task success.
+the native expert on CPU and copies the VLM prefix cache to CPU. The
+`--device=cuda` option selects a hybrid mode: the source VLM runs on
+CUDA-enabled PyTorch while FlowEdge runs the action expert on CPU. The cache
+still crosses to host memory once per action chunk; this is not a CUDA-resident
+expert. No Jetson or SO-100 latency result is recorded yet. The no-robot
+preflight may take minutes on a CPU and does not establish robot task success.
 
 For a calibrated SO-100, LeRobot's rollout command uses the same package:
 

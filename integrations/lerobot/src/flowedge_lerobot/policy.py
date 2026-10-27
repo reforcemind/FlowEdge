@@ -60,8 +60,9 @@ def load_policy(
     """Load a portable Diffusion Policy or hybrid SmolVLA package.
 
     ``reference`` may be a local package directory or a Hugging Face repo ID.
-    Pass ``revision`` to pin a remote package. The device is explicit so a
-    missing CUDA runtime cannot silently turn deployment into a CPU run. By
+    Pass ``revision`` to pin a remote package. For Diffusion Policy, ``cuda``
+    selects native FlowEdge CUDA and fails rather than falling back to CPU. For
+    SmolVLA, ``cuda`` selects a hybrid CUDA VLM plus CPU action expert. By
     default, loading checks package structure and file presence without a second
     full read to hash model weights. Set ``verify_integrity=True`` for full
     manifest hashing, or run ``flowedge-lerobot-preflight`` before deployment.
@@ -81,10 +82,9 @@ def load_policy(
     )
     policy_type = package["manifest"]["policy_type"]
     if policy_type == "flowedge_smolvla" and device == "cuda":
-        raise ValueError(
-            "the native SmolVLA expert currently runs on CPU; CUDA SmolVLA "
-            "deployment is not supported"
-        )
+        from flowedge_lerobot.device import require_torch_cuda
+
+        require_torch_cuda(device)
 
     import lerobot_policy_flowedge  # noqa: F401  Registers the plugin.
     from lerobot.configs.policies import PreTrainedConfig

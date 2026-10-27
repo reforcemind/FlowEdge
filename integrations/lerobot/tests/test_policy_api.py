@@ -1,4 +1,6 @@
 import importlib.util
+import sys
+import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -6,8 +8,8 @@ from unittest.mock import patch
 from flowedge_lerobot.policy import LoadedPolicy
 
 
-@unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
 class PolicyAPITests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
     def test_select_action_uses_matching_processors_and_task(self):
         import torch
 
@@ -64,9 +66,7 @@ class PolicyAPITests(unittest.TestCase):
         config = FlowEdgeConfig(
             checkpoint_path="fixture.safetensors",
             input_features={
-                "observation.state": PolicyFeature(
-                    type=FeatureType.STATE, shape=(3,)
-                )
+                "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(3,))
             },
             output_features={
                 "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,))
@@ -88,11 +88,11 @@ class PolicyAPITests(unittest.TestCase):
 
         policy = Policy()
         runner = LoadedPolicy(policy, preprocessor, postprocessor)
-        action = runner.select_action(
-            {"observation.state": torch.zeros(3)}
-        )
+        action = runner.select_action({"observation.state": torch.zeros(3)})
 
-        self.assertEqual(tuple(policy.asserted_batch["observation.state"].shape), (1, 3))
+        self.assertEqual(
+            tuple(policy.asserted_batch["observation.state"].shape), (1, 3)
+        )
         self.assertIsInstance(action, torch.Tensor)
         self.assertEqual(tuple(action.shape), (1, 2))
 
@@ -130,7 +130,9 @@ class PolicyAPITests(unittest.TestCase):
                 "lerobot.configs.policies.PreTrainedConfig.from_pretrained",
                 return_value=config,
             ),
-            patch("lerobot.policies.factory.get_policy_class", return_value=PolicyClass),
+            patch(
+                "lerobot.policies.factory.get_policy_class", return_value=PolicyClass
+            ),
             patch(
                 "lerobot_policy_flowedge.processor_flowedge.make_flowedge_smolvla_pre_post_processors",
                 return_value=(lambda value: value, lambda value: value),
@@ -140,6 +142,69 @@ class PolicyAPITests(unittest.TestCase):
 
         self.assertIs(loaded.policy, policy)
         validate.assert_called_once_with("org/policy", **options)
+
+    def test_smolvla_cuda_load_selects_hybrid_source_device(self):
+        from flowedge_lerobot.policy import load_policy
+
+        config = SimpleNamespace(type="flowedge_smolvla", device="cpu")
+
+        class PolicyClass:
+            @classmethod
+            def from_pretrained(cls, reference, *, config):
+                del cls, reference
+                return SimpleNamespace(config=config)
+
+        def fake_module(name, **attributes):
+            value = types.ModuleType(name)
+            value.__dict__.update(attributes)
+            value.__path__ = []
+            return value
+
+        config_module = fake_module(
+            "lerobot.configs.policies",
+            PreTrainedConfig=SimpleNamespace(from_pretrained=lambda _: config),
+        )
+        factory_module = fake_module(
+            "lerobot.policies.factory", get_policy_class=lambda _: PolicyClass
+        )
+        processor_module = fake_module(
+            "lerobot_policy_flowedge.processor_flowedge",
+            make_flowedge_pre_post_processors=lambda _: (
+                lambda value: value,
+                lambda value: value,
+            ),
+            make_flowedge_smolvla_pre_post_processors=lambda _: (
+                lambda value: value,
+                lambda value: value,
+            ),
+        )
+        mocked_modules = {
+            "lerobot": fake_module("lerobot"),
+            "lerobot.configs": fake_module("lerobot.configs"),
+            "lerobot.configs.policies": config_module,
+            "lerobot.policies": fake_module("lerobot.policies"),
+            "lerobot.policies.factory": factory_module,
+            "lerobot_policy_flowedge": fake_module("lerobot_policy_flowedge"),
+            "lerobot_policy_flowedge.processor_flowedge": processor_module,
+        }
+
+        package = {
+            "manifest": {"policy_type": "flowedge_smolvla"},
+            "root": "cached-package",
+        }
+        with (
+            patch.dict(sys.modules, mocked_modules),
+            patch(
+                "flowedge_lerobot.deployment.validate_deployment_package",
+                return_value=package,
+            ),
+            patch("flowedge_lerobot.device.require_torch_cuda") as require_cuda,
+        ):
+            loaded = load_policy("org/smolvla", device="cuda")
+
+        self.assertEqual(loaded.policy.config.type, "flowedge_smolvla")
+        self.assertEqual(config.device, "cuda")
+        require_cuda.assert_called_once_with("cuda")
 
 
 if __name__ == "__main__":

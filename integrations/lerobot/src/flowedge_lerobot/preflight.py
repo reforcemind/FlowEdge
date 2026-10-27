@@ -17,6 +17,7 @@ from flowedge_lerobot.cli import (
     _jetson_facts,
     peak_rss_bytes,
 )
+from flowedge_lerobot.device import require_torch_cuda
 
 
 def _version(distribution: str) -> str | None:
@@ -155,17 +156,17 @@ def run_preflight(
     package = validate_deployment_package(reference, verify_integrity=True)
     integrity_ms = (time.perf_counter() - integrity_started) * 1_000
     policy_type = package["manifest"]["policy_type"]
-    if policy_type == "flowedge_smolvla" and (
-        device != "cpu" or precision != "exact-f32"
-    ):
-        raise ValueError(
-            "SmolVLA preflight currently requires device=cpu and exact-f32"
-        )
+    if policy_type == "flowedge_smolvla" and precision != "exact-f32":
+        raise ValueError("SmolVLA preflight currently requires exact-f32 precision")
+
+    import torch
+
+    if policy_type == "flowedge_smolvla" and device.startswith("cuda"):
+        require_torch_cuda(device, torch)
 
     # Importing the plugin registers both configuration types with LeRobot.
     import flowedge
     import lerobot_policy_flowedge  # noqa: F401
-    import torch
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.policies.factory import get_policy_class
     from lerobot_policy_flowedge.processor_flowedge import (
@@ -201,7 +202,7 @@ def run_preflight(
     engine = policy._policy if policy_type == "flowedge" else policy._expert._engine
     cuda_requested = device.startswith("cuda")
     native_resident = bool(getattr(engine, "cuda_resident", False))
-    if cuda_requested and not native_resident:
+    if cuda_requested and policy_type != "flowedge_smolvla" and not native_resident:
         raise RuntimeError(
             "CUDA was requested but native policy weights are not resident"
         )
@@ -229,6 +230,9 @@ def run_preflight(
             "native_expert_backend": "cpu"
             if policy_type == "flowedge_smolvla"
             else device,
+            "source_vlm_device": str(policy.config.device)
+            if policy_type == "flowedge_smolvla"
+            else None,
             "requested_precision": precision,
             "resolved_precision": str(getattr(engine, "precision", precision)),
             "flowedge_cuda_build": bool(getattr(flowedge, "cuda", False)),
@@ -245,7 +249,14 @@ def run_preflight(
             "Synthetic zero observations; this does not test a camera or robot driver.",
             "No claim about task success, joint limits, or emergency-stop behavior.",
             "Latency percentiles are diagnostic when the iteration count is small.",
-        ],
+        ]
+        + (
+            [
+                "SmolVLA's source VLM cache is copied to host memory for the CPU action expert."
+            ]
+            if policy_type == "flowedge_smolvla" and cuda_requested
+            else []
+        ),
     }
 
 
