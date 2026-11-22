@@ -1,128 +1,68 @@
 # Contributing to FlowEdge
 
-Thanks for considering contributing to FlowEdge.
+Thank you for your interest in contributing to FlowEdge.
 
-Contributions are welcome across model support, kernels, backends, benchmarking, APIs, documentation, and robotics integrations.
+FlowEdge welcomes contributions across kernel optimization, model support, hardware backends, benchmarking, APIs, documentation, and robotics integrations.
 
-By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-If GitHub shows “Issue creation is restricted,” use [Discussions](https://github.com/reforcemind/FlowEdge/discussions) for questions. Maintainers: GitHub Settings → Moderation → Interaction limits, and collaborator-only issue creation, must be off for public reports.
+If you have questions or want to discuss an idea before opening an issue or pull request, please start a discussion in [GitHub Discussions](https://github.com/reforcemind/FlowEdge/discussions).
 
-## Where to start
+---
 
-If you're new to the project, look for issues labeled:
+## Where to Start
 
-* `good first issue` — small, well-scoped tasks suitable for first-time contributors
-* `help wanted` — work where community contributions are especially welcome
+- **Issues**: Check issues tagged with `good first issue` or `help wanted` for well-scoped starter tasks.
+- **Architectural Changes**: For large features or interface modifications, please open an issue first to discuss the design and scope.
 
-Current starters: [#185](https://github.com/reforcemind/FlowEdge/issues/185) (Windows first-run), [#186](https://github.com/reforcemind/FlowEdge/issues/186) (gym PushT GIF).
+---
 
-CPU wheels for v0.1.2 are Release assets (filenames `flowedge-0.1.2-*`). A GitHub tag `vX.Y.Z` must match `project.version` in `pyproject.toml` so wheel names match the tag. CUDA stays a source backend.
+## Development Standards & Principles
 
-For large features or architectural changes, please open or comment on an issue first so the scope and interface can be agreed before implementation.
+1. **Deterministic Hot Paths**: Inference hot paths in Core must remain free of dynamic memory allocations (`malloc`/`free`) after initialization.
+2. **Minimal Overhead**: Favor standard C++23 facilities, explicit buffers, and zero-cost abstractions.
+3. **Reproducible Parity**: Changes to mathematical operators or policy heads must include parity checks against PyTorch/reference implementations.
+4. **Clean Layer Separation**: `FlowEdge::Core` does not depend on `FlowEdge::Relay`. Keep dependencies unidirectional.
 
-## Development loop
+---
 
-![convert, CPU replay, hardware, same contracts](docs/_static/figures/sequence.svg)
+## Development Environment
 
-issue → research comment → follow-up issues → one PR → review → evidence on main
+### Requirements
 
-1. **Issue.** State the problem, the smallest useful scope, what is out of scope, and the evidence that would close it. Use the research template when the design is not yet obvious.
-2. **Research.** Comment on the issue with pinned checkpoints, shapes, hot kernels, and open questions. Do not open a PR yet. Split child issues if the parent is still too large.
-3. **Implement.** One PR per issue, from `main`. Runtime changes must keep the zero-allocation hot path.
-4. **Evidence.** Model work includes a parity command. Performance work includes same-host before/after medians. User-path changes update the relevant guide.
+- CMake 3.21+
+- C++23 compliant compiler:
+  - Clang 16+
+  - GCC 13+
+  - MSVC 19.38+
+- Python 3.10–3.12 (for building Python bindings)
 
-Current product: CPU Core (Mamba + flow, Diffusion Policy, Transformer decoder fixture, cached SmolVLA expert), LeRobot plugin, optional Relay. CUDA flow and DP heads are device-resident behind `nvcc`; matched GPU replay is [#163](https://github.com/reforcemind/FlowEdge/issues/163), LeRobot CUDA is [#164](https://github.com/reforcemind/FlowEdge/issues/164). Tenstorrent (Metal), π0, and ACT stay behind that evidence.
-
-## Code bar
-
-1. Remove work that does not need to exist.
-2. Reuse an existing FlowEdge contract.
-3. Prefer a zero-overhead standard or platform facility.
-4. Write the smallest measured implementation.
-
-Core compute and documented Relay hot paths allocate nothing after construction. Setup may use `std::expected`; hot paths do not throw. `FlowEdge::Core` never depends on Relay.
-
-## Development environment
-
-FlowEdge requires:
-
-* CMake 3.21+
-* a C++23 compiler
-
-  * Clang 16+
-  * GCC 13+
-  * MSVC 19.38+
-
-See the `README.md` and project documentation for full build and setup instructions.
-
-Binary wheels are built with cibuildwheel (`pyproject.toml` `[tool.cibuildwheel]`)
-for CPython 3.10–3.12 on native-arch manylinux_2_28 (x86_64 and aarch64 runners),
-Windows AMD64, and macOS. A local `pip install .` still compiles with a C++23 toolchain.
-
-A typical build with tests enabled is:
+### Building and Testing
 
 ```bash
+# Configure and build with tests enabled
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFLOWEDGE_TESTS=ON
 cmake --build build -j
+
+# Run C++ unit tests
 ctest --test-dir build --output-on-failure
 ```
 
-## Submitting a Pull Request
+---
 
-1. **Fork the repository** and create a branch from `main`.
-2. **Keep the PR focused** on one logical change.
-3. **Build and run the tests** before submitting. Parity (ULP, convert,
-   diffusion python) is local: Grok Bot runs `tools/scripts/verify_all.sh` or
-   `tools/scripts/verify_local.ps1`. GitHub Actions is compile + `ctest`.
-4. **Follow the existing C++ style** and formatting conventions.
-5. **Add or update tests** for changed behavior.
-6. **Link the relevant issue** when applicable.
-7. **Describe what changed and why** in the PR description.
+## Submitting Pull Requests
 
-For performance-sensitive changes such as kernels, scheduling, memory layout, model execution, or backends, include before/after benchmark results and the environment used to produce them.
+1. **Branching**: Fork the repository and create a descriptive branch from `main`.
+2. **Focus**: Keep pull requests small and focused on a single logical change.
+3. **Testing**: Run unit tests and verification scripts before submitting:
+   - Linux / macOS: `./tools/scripts/verify_all.sh models/mamba_flow.safetensors`
+   - Windows: `powershell -File tools/scripts/verify_local.ps1 -BuildDir build`
+4. **Code Style**: Follow existing C++ and Python formatting conventions (`./tools/scripts/lint.sh`).
+5. **Performance Changes**: Any optimization or kernel change must provide before-and-after benchmark results measured on the same machine, including compiler, device, and configuration details.
 
-Changes to the inference hot path should preserve FlowEdge's fixed-memory / allocation-free runtime behavior unless there is a strong reason not to.
+---
 
-## Reporting bugs
+## Bug Reports & Feature Requests
 
-Before opening a bug report:
-
-* check that the issue has not already been reported;
-* use the bug report template;
-* include the FlowEdge version or commit;
-* include your OS, CPU/device, compiler, and relevant configuration;
-* provide the smallest reproduction you can.
-
-Logs and exact commands are especially helpful.
-
-## Requesting features
-
-Use the feature request template and explain:
-
-* the use case;
-* why the feature belongs in FlowEdge;
-* the smallest useful scope;
-* how the implementation could be validated.
-
-For large features such as new backbones, action heads, or accelerator backends, defining the supported model/hardware scope up front is strongly preferred.
-
-## Performance changes
-
-FlowEdge is designed around deterministic, low-latency inference.
-
-If your change affects performance, please include:
-
-* CPU/device
-* OS
-* compiler
-* build type
-* FlowEdge commit
-* benchmark configuration
-* before/after results
-
-Do not report speedups from runs performed on materially different environments.
-
-## Questions
-
-If you're unsure whether an idea fits the project, open a GitHub Discussion or comment on the relevant issue before starting a large implementation.
+- **Bug Reports**: Please include the FlowEdge version or commit SHA, operating system, compiler, GPU/driver details (if applicable), and a minimal reproduction command or script.
+- **Feature Requests**: Describe the use case, why it belongs in FlowEdge, and how the feature can be verified with automated tests.

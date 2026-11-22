@@ -1,38 +1,36 @@
-# Benchmark map
+# Benchmark Suite
+
+FlowEdge organizes its verification and performance benchmarks into distinct tiers, from isolated kernel microbenchmarks to full-policy rollouts.
 
 ```{image} _static/figures/benches.svg
-:alt: kernels, Relay tail, policy vs PyTorch, period misses
+:alt: Benchmark suite overview: kernels, runtime tail, policy vs PyTorch, period misses
 :class: fe-fig
 ```
 
-| Suite | Location | Measures |
+## Benchmark Directory
+
+| Suite | Entry Point / Location | Primary Metric |
 |---|---|---|
-| Kernels | `tools/benchmark/kernels/` | Dense ops, including DP Conv1D shapes |
-| Runtime | `tools/benchmark/runtime/` | Relay admission, queues, delivery |
-| Flow matching vs PyTorch | `python -m flowedge_dev verify ulp` | ULP / rel-error on `mamba_flow` — not a p50 |
-| Diffusion Policy vs PyTorch | `python -m flowedge_dev bench policy` | Same observations, processor, noise, DDIM vs LeRobot |
-| Period loop | `python -m flowedge_dev pipeline rollout` | `--period-ms`, `--on-miss`, RSS; `--device cuda` on a CUDA Core build |
-| Closed loop | `flowedge_lerobot.evaluate` | PushT outcome — not a timing proof |
-| SmolVLA expert | `python -m flowedge_dev verify smolvla` | Cached-VLM expert vs source; VLM stays in PyTorch |
-| Transformer fixture | `python -m flowedge_dev verify transformer`, `transformer_latency` | GPT-2 smoke vs Hugging Face; host decoder p50 is not a policy result |
-| ONNX companion | `integrations/onnx` | Fixed-shape ORT adapter; measure separately |
+| **Kernel Microbenchmarks** | `tools/benchmark/kernels/` | Operator latency (Conv1D, GEMM, scan, GroupNorm) |
+| **Relay IPC Runtime** | `tools/benchmark/runtime/` | IPC roundtrip latency, throughput, EDF scheduling |
+| **Flow Matching Parity** | `python -m flowedge_dev verify ulp` | Numerical error & ULP difference vs PyTorch reference |
+| **Diffusion Policy Replay** | `python -m flowedge_dev bench policy` | End-to-end policy latency (p50/p95/p99) vs LeRobot |
+| **Period Rollout Simulator** | `python -m flowedge_dev pipeline rollout` | Deadline miss counts and timing under target period |
+| **SmolVLA Expert** | `python -m flowedge_dev verify smolvla` | Action expert numerical parity with cached VLM prefix |
+| **Transformer Decoder** | `python -m flowedge_dev verify transformer` | GPT-2 attention and decoder block verification |
+| **Closed-loop Simulation** | `flowedge_lerobot.evaluate` | Task completion rate and cumulative reward (PushT) |
 
-The two product heads are flow matching and Diffusion Policy. Without FlowEdge
-you keep them in PyTorch/LeRobot or a graph compiler. With FlowEdge you convert
-the head, pin RSS, and compare against that same PyTorch reference. Mix ULP
-with p50 and the claim is wrong. [Performance](performance).
+---
 
-For the exact report command, artifact contents, and reproducibility contract,
-use the [policy benchmark guide](guides/edge-benchmarks). For measured results
-and their hardware conditions, see [Performance](performance).
+## Benchmark Guidelines & Standards
 
-## Interpretation
+To ensure benchmarks remain reproducible and meaningful, claims in FlowEdge follow strict standards:
 
-| Claim | Allowed when |
+| Benchmark Claim | Verification Standard |
 |---|---|
-| PyTorch speedup | Same checkpoint, processor, host, threads, schedule |
-| Real-time | Full period, delivery path, miss counts |
-| Zero hot allocations | Native path instrumentation |
-| Hardware result | Artifact names the board |
+| **Framework Speedup** | Must compare against identical checkpoints, preprocessing, batch size, thread counts, and scheduler steps on the same machine. |
+| **Real-time Deadline Feasibility** | Must evaluate the full control interval, report missed deadline counts, and specify the fallback strategy (`hold`, `drop`, or `raise`). |
+| **Zero Dynamic Allocations** | Verified via heap profiling or memory arena tracking on warm inference paths. |
+| **Hardware-Specific Results** | Must explicitly document CPU architecture, GPU model, driver versions, and power/thermal constraints. |
 
-**CPU available · CUDA matched PushT replay on GTX 1650 · Tenstorrent planned**. CUDA policy p50 is not the README CPU headline. Not TensorRT/ONNX. Not Jetson/ARM ([#70](https://github.com/reforcemind/FlowEdge/issues/70)).
+For detailed benchmark figures and hardware configurations, see [Performance](performance). To generate standardized benchmark artifacts, see the [Edge Benchmarks Guide](guides/edge-benchmarks).

@@ -1,92 +1,78 @@
-# Diffusion Policy
+# Diffusion Policy Guide
 
-A diffusion policy treats the **action horizon** as the thing being denoised.
-LeRobot trains a Conv1D U-Net that predicts noise given a noisy chunk, a
-timestep, and an observation condition. FlowEdge runs that U-Net in a fixed
-arena (DDIM by default, seeded DDPM for reference) and un-normalizes with the
-checkpoint MIN_MAX stats. The RGB encoder stays in LeRobot.
+A Diffusion Policy generates actions by iteratively denoising an action trajectory conditioned on environment observations.
+
+LeRobot trains a 1D convolutional U-Net that predicts noise given a noisy trajectory chunk, timestep, and observation condition. FlowEdge executes this U-Net natively inside a pre-allocated C++ memory arena using deterministic DDIM sampling (or seeded DDPM) and applies dataset MIN_MAX un-normalization. Upstream observation encoding remains with LeRobot.
 
 ```{image} ../_static/figures/policies.svg
-:alt: Flow matching ODE versus Diffusion Policy DDIM
+:alt: Comparison of Flow matching ODE versus Diffusion Policy DDIM
 :class: fe-fig
 ```
 
-Fixed-memory `diffusion_pusht` contract below. For the matched PyTorch p50 and
-the 10 ms miss count, see [Performance](../performance.md).
+---
 
-```{image} ../_static/figures/convert.svg
-:alt: convert a checkpoint once
-:class: fe-fig
-```
+## Model Contract & Architecture
 
-```{image} ../_static/figures/workflow.svg
-:alt: convert, load arena, integrate, period, act
-:class: fe-fig
-```
+- **U-Net Architecture**: 1D convolutions (`Conv1D`, `ConvTranspose1D`), GroupNorm, Mish activations, sinusoidal timestep embeddings, and FiLM conditioning projections.
+- **Noise Schedulers**: Deterministic DDIM (default, zero RNG on hot path) and seeded DDPM.
+- **Un-normalization**: Fixed `MIN_MAX` un-normalization statistics imported directly during conversion.
+- **Reference Configuration** (`diffusion_pusht`): Horizon 16, action dimension 2, action execution steps 8, observation steps 2, U-Net channel widths 512 / 1024 / 2048, timestep embedding dimension 128.
 
-Contract: fixed horizon / action dim / U-Net widths; Conv1D + ConvTranspose1D; GroupNorm, Mish, sinusoidal timestep, FiLM; `squaredcos_cap_v2` epsilon; DDIM / seeded DDPM; MIN_MAX un-normalize.
+---
 
-Reference: horizon 16, action dim 2, action steps 8, observation steps 2, widths 512/1024/2048, timestep 128, 100 train steps. Pinned revision `84a7c23178445c6bbf7e1a884ff497017910f653`. Newer LeRobot migrations may put action stats in `policy_postprocessor.json`; the converter reads `action.min` / `action.max` from `unnormalizer_processor`. MIN_MAX only.
+## Observation Boundary
 
-## Observation boundary
+FlowEdge operates on the flattened observation condition vector produced by upstream vision or state encoders:
 
-FlowEdge does not run the reference ResNet18 image encoder. Run LeRobot's
-observation preprocessing and encoder externally, then pass the flattened
-condition immediately before `DiffusionConditionalUnet1d`.
+For the reference `diffusion_pusht` policy, two observation steps each contribute a 2-value normalized robot state and a 64-value image feature (totaling 132 condition elements). The converter validates condition widths from checkpoint FiLM projections.
 
-For `diffusion_pusht`, each of the two observation steps contributes the
-normalized 2-value robot state followed by the 64-value spatial-softmax image
-feature. Flatten the `[2, 66]` tensor in time order to obtain the 132-value
-condition. The converter derives and validates this width from every FiLM
-projection rather than hard-coding it.
+---
 
-## Convert and sample
+## Conversion and Inference
+
+### 1. Convert Checkpoint
 
 ```bash
+# Download reference checkpoint
 hf download lerobot/diffusion_pusht --revision 84a7c23178445c6bbf7e1a884ff497017910f653 \
   --local-dir models/diffusion_pusht
+
+# Convert weights and metadata into FlowEdge format
 python -m flowedge_dev pipeline convert models/diffusion_pusht \
   models/diffusion_pusht.flowedge.safetensors --arch diffusion
+```
+
+### 2. Run Standalone Sampling
+
+```bash
+# Run standalone C++ inference sample (10 DDIM steps)
 ./build/diffusion_sample models/diffusion_pusht.flowedge.safetensors 10
 ```
 
-`FLOWEDGE_BACKEND=cuda` keeps the U-Net and DDIM scratch on device after load.
-Compare that `diffusion_sample` binary to a CPU build on the same checkpoint and
-noise. Matched CUDA vs PyTorch CUDA policy p50 on GTX 1650 is 131 ms vs 345 ms
-([Performance](../performance.md)).
+With `FLOWEDGE_BACKEND=cuda`, U-Net weights and intermediate scratch remain device-resident on the GPU, avoiding host roundtrips.
 
-For a non-standard processor filename, pass it explicitly with
-`--processor path/to/policy_postprocessor.json`. Observation preprocessing
-remains outside FlowEdge; only action un-normalization statistics are imported
-from the processor state.
+---
 
-The output contains the whole 16-step denoised horizon in original PushT action
-units. LeRobot normally executes only `n_action_steps`, beginning at index
-`n_obs_steps - 1`; keep that slicing policy in the controller.
+## Verification & Benchmarks
 
-## Verify and benchmark
-
-`tools/verification/verify_diffusion.py` (`python -m flowedge_dev verify diffusion`) creates a small LeRobot-shaped checkpoint, runs the
-converter, loads the Python extension, and checks denoiser, DDIM, DDPM,
-determinism, metadata, and un-normalization against an independent PyTorch
-reference. Current explicit tolerances are `2e-4` for one denoiser pass, `4e-4`
-for DDIM, and `8e-4` for seeded DDPM; observed errors are printed.
+Validate numerical parity against the PyTorch reference implementation:
 
 ```bash
-PYTHONPATH=build python -m flowedge_dev verify diffusion build
-PYTHONPATH=build python -m flowedge_dev verify diffusion-public \
+# Check denoiser, DDIM, DDPM, and un-normalization tolerances
+python -m flowedge_dev verify diffusion build
+
+# Verify against public reference checkpoint
+python -m flowedge_dev verify diffusion-public \
   models/diffusion_pusht/model.safetensors \
   models/diffusion_pusht.flowedge.safetensors --build build
 ```
 
-The former C++ latency runner generated its own condition and noise, so it was
-removed. Use the matched visual-policy replay in the [performance guide](../performance.md)
-for end-to-end measurements with captured observations and source preprocessing.
+For full policy latency benchmarks and comparison with PyTorch, see [Performance Documentation](../performance).
 
-## Limits
+---
 
-Batch size is one. Shapes are fixed at conversion. Convolution and normalization
-weights remain F32; two-dimensional linear weights may be BF16. The scalar
-diffusion kernels use fixed-shape loop specializations and the existing CPU
-thread pool; ISA-specialized convolution is still planned. Training, image encoding, arbitrary schedulers,
-dynamic horizons, and accelerator backends are outside this initial path.
+## Specifications & Constraints
+
+- **Batch Size**: 1 (optimized for single-robot real-time control loops).
+- **Shapes**: Fixed at conversion time; scratch buffers are sized once at model initialization.
+- **Data Types**: FP32 for activations and normalization; BF16 supported for linear projections; calibrated FP16 deep convolution layers available on CUDA.

@@ -81,6 +81,18 @@ class SmolVLAAdapterTests(unittest.TestCase):
         np.testing.assert_array_equal(actions, [[0, 1, 2], [4, 5, 6]])
         np.testing.assert_array_equal(engine.calls[0][0], noise)
 
+    def test_discard_keeps_sampling_sequence_and_reset_restarts_it(self):
+        engine = FakeEngine()
+        policy = FlowEdgeSmolVLACachedExpert(engine, action_dim=2, seed=7)
+        policy.refill(cache())
+        policy.discard_actions()
+        self.assertEqual(policy.remaining_actions, 0)
+        policy.predict_action_chunk(cache())
+        self.assertFalse(np.array_equal(engine.calls[0][0], engine.calls[1][0]))
+        policy.reset()
+        policy.predict_action_chunk(cache())
+        np.testing.assert_array_equal(engine.calls[0][0], engine.calls[2][0])
+
     def test_legacy_engine_uses_result_returning_sampler(self):
         engine = FakeEngine()
         engine.smolvla_sample_into = None

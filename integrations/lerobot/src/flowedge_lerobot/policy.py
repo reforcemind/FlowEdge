@@ -27,6 +27,14 @@ class LoadedPolicy:
             if callable(reset):
                 reset()
 
+    def _prepare_observation(self, observation: dict, task: str | None) -> dict:
+        raw = dict(observation)
+        if self.policy.config.type == "flowedge_smolvla":
+            if not task:
+                raise ValueError("SmolVLA requires a non-empty task instruction")
+            raw["task"] = task
+        return raw
+
     def select_action(self, observation: dict, *, task: str | None = None):
         """Return a postprocessed LeRobot action tensor shaped ``(1, action_dim)``.
 
@@ -35,15 +43,38 @@ class LoadedPolicy:
         """
         import torch
 
-        raw = dict(observation)
-        if self.policy.config.type == "flowedge_smolvla":
-            if not task:
-                raise ValueError("SmolVLA requires a non-empty task instruction")
-            raw["task"] = task
         with torch.inference_mode():
-            batch = self.preprocessor(raw)
+            batch = self.preprocessor(self._prepare_observation(observation, task))
             action = self.policy.select_action(batch)
             return self.postprocessor(action)
+
+    def predict_action_chunk(self, observation: dict, *, task: str | None = None):
+        """Sample fresh actions, postprocessed to shape ``(1, steps, action_dim)``.
+
+        This discards any queued actions. The processor is applied to each
+        batch-one action, matching the contract used by ``select_action``.
+        """
+        import torch
+
+        with torch.inference_mode():
+            batch = self.preprocessor(self._prepare_observation(observation, task))
+            chunk = self.policy.predict_action_chunk(batch)
+            if (
+                not isinstance(chunk, torch.Tensor)
+                or chunk.ndim != 3
+                or chunk.shape[0] != 1
+                or chunk.shape[1] == 0
+            ):
+                raise RuntimeError(
+                    "policy must return a nonempty batch-one action chunk"
+                )
+            return torch.stack(
+                [
+                    self.postprocessor(chunk[:, index])
+                    for index in range(chunk.shape[1])
+                ],
+                dim=1,
+            )
 
 
 def load_policy(

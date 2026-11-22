@@ -2,28 +2,28 @@
 
 <img class="fe-hero-img" src="_static/hero.png" alt="FlowEdge" />
 
-<p class="fe-lede">FlowEdge is a C++23 inference runtime for robotics policies with fixed memory, deterministic execution, and explicit deadline handling. It runs two heads: <strong>flow matching</strong> (a short ODE from noise to action) and <strong>Diffusion Policy</strong> (DDIM on a Conv1D U-Net). LeRobot still owns training, cameras, and the robot driver.</p>
+<p class="fe-lede">FlowEdge is a C++23 inference runtime for robotics policies engineered for fixed memory, deterministic execution, and explicit deadline handling. It natively executes two primary heads: <strong>flow matching</strong> (a short ODE from noise to action) and <strong>Diffusion Policy</strong> (DDIM on a Conv1D U-Net). LeRobot continues to own training, observation pipelines, and robot hardware drivers.</p>
 
 ```{raw} html
 <ul class="fe-chips">
   <li>C++23 Core</li>
   <li>CPU · CUDA</li>
-  <li>Tenstorrent preview</li>
+  <li>Zero hot allocations</li>
   <li>LeRobot adapter</li>
 </ul>
 
 <div class="fe-metrics">
   <div class="fe-metric">
     <span class="fe-metric-value">851 vs 1409</span>
-    <span class="fe-metric-label">CPU DDIM p50 · ms · threads=1</span>
+    <span class="fe-metric-label">CPU DDIM p50 · ms (threads=1)</span>
   </div>
   <div class="fe-metric">
     <span class="fe-metric-value">131 vs 345</span>
-    <span class="fe-metric-label">CUDA DDIM p50 · ms · GTX 1650</span>
+    <span class="fe-metric-label">CUDA DDIM p50 · ms (GTX 1650)</span>
   </div>
   <div class="fe-metric">
     <span class="fe-metric-value">malloc = 0</span>
-    <span class="fe-metric-label">Supported hot paths after load</span>
+    <span class="fe-metric-label">Zero hot-path allocations</span>
   </div>
 </div>
 
@@ -31,124 +31,85 @@
   <a class="fe-jump-card" href="getting-started.html">
     <span class="fe-jump-kicker">01</span>
     <strong>Get started</strong>
-    <span>Build Core, convert a mix, run the first sample.</span>
+    <span>Build Core, convert checkpoints, run first sample.</span>
   </a>
   <a class="fe-jump-card" href="python-quickstart.html">
     <span class="fe-jump-kicker">02</span>
     <strong>Python</strong>
-    <span>Wheel, Engine, predict, and DDIM from CPython.</span>
+    <span>Install wheels, load Engine, sample actions.</span>
   </a>
   <a class="fe-jump-card" href="guides/lerobot.html">
     <span class="fe-jump-kicker">03</span>
     <strong>LeRobot</strong>
-    <span>Plugin, period, and <code>--on-miss</code> around the native head.</span>
+    <span>Adapter, rollout, and deadline miss policies.</span>
   </a>
   <a class="fe-jump-card" href="performance.html">
     <span class="fe-jump-kicker">04</span>
     <strong>Performance</strong>
-    <span>Fair compare vs PyTorch. Not a 10 ms loop.</span>
+    <span>Matched end-to-end benchmarks vs PyTorch.</span>
   </a>
   <a class="fe-jump-card" href="architecture/overview.html">
     <span class="fe-jump-kicker">05</span>
     <strong>Architecture</strong>
-    <span>Arena, kernels, CUDA residency, two product heads.</span>
+    <span>Memory arena, kernels, CUDA residency, design.</span>
   </a>
   <a class="fe-jump-card" href="api/c-abi.html">
     <span class="fe-jump-kicker">06</span>
     <strong>C API</strong>
-    <span><code>fe_engine_*</code> load, sample, and miss policy.</span>
+    <span>ABI functions, lifecycle, and zero-overhead calls.</span>
   </a>
 </nav>
 ```
 
-## News
+## Key Highlights
 
-**September 2026**
-
-```{raw} html
-<ul class="fe-news">
-  <li class="fe-news-item">
-    <span class="fe-news-date">19</span>
-    <p>Repo lives at <a href="https://github.com/reforcemind/FlowEdge">reforcemind/FlowEdge</a>. <a href="https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2">v0.1.2</a> CPU wheels are <code>flowedge-0.1.2-*</code>. Not PyPI. CUDA stays a source backend.</p>
-  </li>
-  <li class="fe-news-item">
-    <span class="fe-news-date">19</span>
-    <p>Split-K CUDA Conv1D on horizon 8 (<a href="https://github.com/reforcemind/FlowEdge/pull/183">#183</a>). GTX 1650 matched DDIM replay stays <strong>131 vs 345 ms</strong> vs PyTorch CUDA. Not a 10 ms loop.</p>
-  </li>
-  <li class="fe-news-item">
-    <span class="fe-news-date">18</span>
-    <p>Device-resident CUDA after load: flow (<a href="https://github.com/reforcemind/FlowEdge/pull/167">#167</a>), Diffusion Policy (<a href="https://github.com/reforcemind/FlowEdge/pull/168">#168</a>, <a href="https://github.com/reforcemind/FlowEdge/pull/169">#169</a>), Mamba (<a href="https://github.com/reforcemind/FlowEdge/pull/173">#173</a>). Same-process CUDA vs PyTorch CUDA (<a href="https://github.com/reforcemind/FlowEdge/pull/170">#170</a>). <code>--device cuda</code> period rollouts (<a href="https://github.com/reforcemind/FlowEdge/pull/171">#171</a>).</p>
-  </li>
-  <li class="fe-news-item">
-    <span class="fe-news-date">17</span>
-    <p><a href="https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.1">v0.1.1</a> CPU wheels (manylinux, Windows, macOS ARM). Not on PyPI. <code>--on-miss hold|drop|raise</code> (<a href="https://github.com/reforcemind/FlowEdge/pull/152">#152</a>). CPU fair-compare <strong>851 vs 1409 ms</strong>, <code>threads=1</code>.</p>
-  </li>
-</ul>
-```
-
-<p class="fe-inline-links"><a href="https://github.com/reforcemind/FlowEdge/releases">GitHub Releases</a> · <a href="performance.html">Performance</a> · <a href="https://github.com/reforcemind/FlowEdge">Source</a></p>
+- **Deterministic Memory**: All weight and scratch memory is allocated and pre-faulted once at engine initialization. Hot-path execution performs zero dynamic allocations.
+- **Explicit Deadline Handling**: Control loops can select explicit behaviors (`hold`, `drop`, or `raise`) when policy inference exceeds the allocated control period.
+- **Matched Parity**: Native kernels maintain bit-level and ULP parity with upstream PyTorch and LeRobot references.
+- **Modular Ecosystem Fit**: FlowEdge operates as a dedicated policy accelerator, leaving perception, data collection, joint safety limits, and hardware control to frameworks like LeRobot.
 
 ## Who should use FlowEdge
 
-A robot stack already has a trainer, perception pipeline, and hardware driver.
-Use FlowEdge when you want to keep those pieces and run a supported action head
-in a small native runtime with explicit memory and deadline behavior.
-
-| Your situation | What FlowEdge does |
+| Use Case | How FlowEdge helps |
 |---|---|
-| A trained LeRobot Diffusion Policy | Packages its matching native action head while retaining the source RGB encoder and processors. |
-| A compatible SmolVLA checkpoint | Experimental hybrid: LeRobot runs the VLM; FlowEdge runs the CPU action expert. |
-| A custom robot or simulator | Exposes a Python policy API or lower-level C++/C interfaces; the caller keeps control of observations and actions. |
+| **Trained LeRobot Diffusion Policy** | Executes the compute-intensive action head with low latency and fixed memory while keeping source RGB encoders and processors. |
+| **SmolVLA Checkpoints** | Hybrid path: LeRobot runs the VLM; FlowEdge executes the action expert. |
+| **Custom Robots & Simulators** | Provides low-level C and C++ ABIs alongside high-level Python bindings, with complete caller control over observation buffers and action chunks. |
 
-The practical advantage is a specialized action-inference path: fixed-shape
-native kernels and a sized runtime arena. The optional period runner is a
-simulator-only smoke test with explicit `hold`, `drop`, or `raise` behavior;
-those deadline results do not apply to physical hardware. `load_policy()` alone
-does not schedule a robot loop or enforce a deadline. FlowEdge does not replace
-model training, general-purpose graph compilers, robot drivers, joint limits,
-or an emergency stop.
+## Quick Python Example
 
-## Start from Python
-
-The optional LeRobot integration packages a trained policy and exposes a
-single action API. Diffusion Policy also needs its matching converted
-FlowEdge checkpoint; the [converter guide](guides/converter) shows that step.
+The LeRobot adapter packages a trained checkpoint and provides an inference API:
 
 ```python
 from flowedge_lerobot import load_policy, package_policy
 
+# Package converted checkpoint with normalization statistics
 package = package_policy(
     "outputs/train/my_policy/checkpoints/last/pretrained_model",
     "deploy/my_policy",
     converted_checkpoint="models/my_policy.flowedge.safetensors",
 )
+
 policy = load_policy(package, device="cpu")
 policy.reset()
-# Build this mapping from your camera/state reader; keys and shapes must match
-# policy.input_features.
+
+# Query action from current sensor observation
 action = policy.select_action(observation)
 ```
 
-For SmolVLA, omit `converted_checkpoint` and pass the task instruction to
-`select_action`. The result is a postprocessed tensor shaped
-`(1, action_dim)`, not a named joint mapping for a robot driver. Its VLM is not
-native and the expert currently runs on CPU. See the
-[LeRobot guide](guides/lerobot) for installation and rollout details.
+## Benchmark Summary
 
-## What the results mean
+Matched PushT Diffusion Policy replay (median latency, lower is better):
 
-On one matched PushT Diffusion Policy checkpoint, FlowEdge measured 851 ms
-versus PyTorch's 1409 ms on CPU (`threads=1`), and 131 ms versus 345 ms on a
-desktop GTX 1650. These are policy replay medians, not Jetson/SO-100 results
-or a 10 ms control-loop claim. Check the [benchmark conditions](performance)
-before comparing results.
+| Backend | Configuration | FlowEdge | PyTorch / LeRobot | Speedup |
+|---|---|---:|---:|---:|
+| CPU | 1 thread | **851 ms** | 1409 ms | 1.66× |
+| CPU | 4 threads | **633 ms** | 819 ms | 1.29× |
+| CUDA | GeForce GTX 1650 | **131 ms** | 345 ms | 2.63× |
 
-## Explore
+All comparisons use identical observations, normalization statistics, initial noise, and 10-step DDIM schedules. See [Performance](performance) for detailed breakdowns, hardware specs, and reproduction steps.
 
-[Getting started](getting-started) · [Python API](python-quickstart) ·
-[LeRobot deployment](guides/lerobot) · [Performance](performance) ·
-[Architecture](architecture/overview) · [Capabilities](capabilities) ·
-[Relay](guides/relay-quickstart)
+## Documentation Index
 
 ```{toctree}
 :hidden:

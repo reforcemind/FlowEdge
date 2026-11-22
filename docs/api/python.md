@@ -1,14 +1,18 @@
-# Python
+# Python API Reference
 
-Built with pybind11. Install with pip.
+FlowEdge provides high-performance Python bindings built with pybind11, exposing low-latency C++ inference with zero runtime memory allocations on hot paths.
+
+## Installation
 
 ```bash
-python -m pip install flowedge-0.1.2-*.whl   # CPU wheel from the v0.1.2 GitHub Release
-# or, from a clone with a C++23 toolchain:
+# Install prebuilt CPU wheel:
+python -m pip install flowedge-0.1.2-*.whl
+
+# Or install from source:
 python -m pip install .
 ```
 
-Wheels are CPU. CUDA is a source build. PyPI is not published. [Python quickstart](../python-quickstart).
+For CUDA source builds, configure with `-DFLOWEDGE_BACKEND=cuda` (see the [CUDA Architecture Guide](../architecture/cuda)).
 
 ```python
 import numpy as np, flowedge

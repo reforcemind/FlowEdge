@@ -10,6 +10,34 @@ from flowedge_lerobot.policy import LoadedPolicy
 
 class PolicyAPITests(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
+    def test_fresh_chunk_uses_action_postprocessor_and_task(self):
+        import torch
+
+        class Policy:
+            config = SimpleNamespace(type="flowedge_smolvla", input_features={})
+
+            def predict_action_chunk(self, batch):
+                self.batch = batch
+                return torch.tensor([[[1.0, 2.0], [3.0, 4.0]]])
+
+        policy = Policy()
+        seen_shapes = []
+
+        def postprocess(action):
+            seen_shapes.append(tuple(action.shape))
+            return action * 2
+
+        runner = LoadedPolicy(policy, lambda observation: observation, postprocess)
+        observation = {"observation.state": torch.zeros(2)}
+        with self.assertRaisesRegex(ValueError, "task instruction"):
+            runner.predict_action_chunk(observation)
+        chunk = runner.predict_action_chunk(observation, task="pick")
+        self.assertEqual(chunk.tolist(), [[[2.0, 4.0], [6.0, 8.0]]])
+        self.assertEqual(seen_shapes, [(1, 2), (1, 2)])
+        self.assertEqual(policy.batch["task"], "pick")
+        self.assertNotIn("task", observation)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
     def test_select_action_uses_matching_processors_and_task(self):
         import torch
 
@@ -86,6 +114,10 @@ class PolicyAPITests(unittest.TestCase):
                 self.asserted_batch = batch
                 return torch.ones(1, 2)
 
+            def predict_action_chunk(self, batch):
+                self.asserted_batch = batch
+                return torch.ones(1, 3, 2)
+
         policy = Policy()
         runner = LoadedPolicy(policy, preprocessor, postprocessor)
         action = runner.select_action({"observation.state": torch.zeros(3)})
@@ -95,6 +127,9 @@ class PolicyAPITests(unittest.TestCase):
         )
         self.assertIsInstance(action, torch.Tensor)
         self.assertEqual(tuple(action.shape), (1, 2))
+        chunk = runner.predict_action_chunk({"observation.state": torch.zeros(3)})
+        self.assertEqual(tuple(chunk.shape), (1, 3, 2))
+        torch.testing.assert_close(chunk, torch.ones(1, 3, 2))
 
     @unittest.skipUnless(importlib.util.find_spec("lerobot"), "requires LeRobot")
     def test_load_policy_forwards_hub_resolution_options(self):

@@ -64,6 +64,9 @@ jobs:
           pip install --no-deps -e integrations/lerobot
           flowedge-lerobot-rollout --help
           flowedge-lerobot-preflight --help
+            flowedge-edge --help
+            flowedge-edge preflight --help
+            flowedge-edge bench --help
 
   arm64-neon:
     name: ARM64/NEON validation

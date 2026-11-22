@@ -102,7 +102,7 @@ class FlowEdgeSmolVLAPolicy(PreTrainedPolicy):
         chunk = self._expert.predict_action_chunk(
             cache, noise=self._as_noise(kwargs.get("noise")), steps=steps
         )
-        self._expert.reset()
+        self._expert.discard_actions()
         return torch.from_numpy(chunk.copy()).unsqueeze(0)
 
     def select_action(self, batch, **kwargs):

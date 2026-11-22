@@ -1,38 +1,30 @@
-# FlowEdge on Tenstorrent: active program
+# Tenstorrent Research Track
 
-The first trained robotics target is SmolVLA through LeRobot. This supersedes the
-earlier Mamba-first platform sequence; CPU Mamba remains a runtime reference.
-Tenstorrent execution is not implemented and no established partnership is claimed.
+This document outlines the exploration track for deploying robotics policy heads on Tenstorrent hardware using TT-Metal and TTNN.
 
-## Delivery gates
+```{note}
+Tenstorrent acceleration is currently an active research track. Runtime execution on TT-Metal is experimental and does not imply vendor endorsement.
+```
 
-1. Validate visual Diffusion Policy deployment with matched references, replay artifacts,
-   and closed-loop simulator results.
-2. Pin a trained SmolVLA checkpoint; define exact observation, token, mask, expert, and
-   state contracts. The native action/time suffix projection boundary is now covered by
-   a real-checkpoint PyTorch parity artifact; capture the remaining intermediate and
-   complete-trajectory references next.
-3. Implement one fixed-shape SmolVLA path on one Tenstorrent device, with complete Euler
-   integration and persistent weights, conditioning, and solver buffers.
-4. Measure startup, first/warm inference, host-visible latency, transfers, synchronization,
-   memory, trajectory error, and task quality before selecting custom kernel work.
-5. Optimize measured bottlenecks with TTNN layouts, buffer reuse, or traces. Contribute
-   reusable improvements upstream with minimal reproducers and correctness evidence.
-6. Evaluate DeadlineFlow against fixed plans and simpler adaptive baselines, including
-   underruns, observation age, deadline misses, task quality, and switching cost.
+## Objectives & Roadmap
 
-## Scope
+1. **Diffusion Policy & SmolVLA Reference Parity**:
+   Validate reference trajectories and numerical parity using captured encoder embeddings and action expert targets.
+2. **Fixed-Shape Device Graph**:
+   Target a fixed-shape action-head path on Tenstorrent hardware with persistent device-resident weights and ODE / denoising state buffers.
+3. **Execution Profiling**:
+   Measure initialization, host-to-device transfers, kernel execution latency, and synchronization overhead against CPU and CUDA baselines.
+4. **TTNN Optimization**:
+   Evaluate buffer reuse, native TTNN tensor layouts, and trace capture for repetitive denoising iterations.
+5. **Deadline Scheduling**:
+   Integrate deadline-aware scheduling with bounded action delivery and underrun prevention.
 
-Core owns native inference contracts. Companion adapters own external encoding and
-ecosystem integration. The thesis next validates the complete attention expert using
-captured encoder outputs. Full-policy claims require actual preprocessing and encoding,
-including placement and transfer costs. Accelerator execution needs persistent-device
-interfaces, not host pointer substitutions in CPU kernels.
+---
 
-The thesis delivers a correct measured backend. DeadlineFlow is the systems experiment.
-CppCon explains measured C++ decisions. Additional hardware generations, policies,
-precision portfolios, and custom kernels follow the initial validated slice.
+## Architecture & Boundary
 
-Hardware/cloud access, a technical reviewer, and upstream contribution guidance are the
-initial collaboration requests. Tenstorrent's [academic program](https://tenstorrent.com/academic)
-offers a public route to discuss them; the roadmap does not imply vendor endorsement.
+- **Core Runtime**: FlowEdge Core provides the native execution interface, memory management, and deterministic solver steps.
+- **Hardware Integration**: Accelerator backends implement persistent-device memory buffers and avoid host round-trips during iterative denoising.
+- **Ecosystem Adapters**: Upstream vision encoders and multi-modal models run on host or companion accelerators, passing fixed condition tensors to the Tenstorrent device.
+
+Collaborations and discussions follow Tenstorrent's public developer and academic initiatives. For the general project roadmap, see [Roadmap](roadmap).

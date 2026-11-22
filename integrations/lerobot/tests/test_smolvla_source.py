@@ -5,6 +5,49 @@ import numpy as np
 from flowedge_lerobot import LeRobotSmolVLACacheProvider
 
 
+@unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
+class SmolVLACachePackingTests(unittest.TestCase):
+    def test_packing_cuda_cache_matches_cpu_values(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("requires CUDA-enabled PyTorch and a CUDA device")
+        provider = LeRobotSmolVLACacheProvider(None, expert_layers=2, key_value_width=4)
+        source = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            1, 3, 2, 2
+        )
+        cache = {
+            0: {"key_states": source, "value_states": source + 1},
+            1: {"key_states": source + 2, "value_states": source + 3},
+        }
+        keys, values = provider._pack_cache(cache)
+        np.testing.assert_array_equal(keys[1], np.arange(12).reshape(3, 4) + 2)
+        np.testing.assert_array_equal(values[0], np.arange(12).reshape(3, 4) + 1)
+
+    def test_packing_copies_layers_without_aliasing_and_rejects_mismatch(self):
+        import torch
+
+        provider = LeRobotSmolVLACacheProvider(None, expert_layers=2, key_value_width=4)
+        cache = {
+            layer: {
+                "key_states": torch.full((1, 3, 2, 2), layer, dtype=torch.float64),
+                "value_states": torch.full((1, 3, 2, 2), layer + 10),
+            }
+            for layer in range(2)
+        }
+        keys, values = provider._pack_cache(cache)
+        self.assertEqual(keys.shape, (2, 3, 4))
+        self.assertEqual(keys.dtype, np.float32)
+        self.assertTrue(keys.flags.c_contiguous)
+        np.testing.assert_array_equal(keys[1], 1.0)
+        np.testing.assert_array_equal(values[0], 10.0)
+        cache[1]["key_states"].zero_()
+        np.testing.assert_array_equal(keys[1], 1.0)
+        cache[1]["value_states"] = torch.zeros(1, 2, 2, 2)
+        with self.assertRaisesRegex(ValueError, "matching prefix lengths"):
+            provider._pack_cache(cache)
+
+
 @unittest.skipUnless(
     importlib.util.find_spec("torch") and importlib.util.find_spec("lerobot"),
     "requires torch and LeRobot",
@@ -88,8 +131,9 @@ class SmolVLASourceProviderTests(unittest.TestCase):
                 )
 
         class SourcePolicy:
-            model = Model()
-            _queues = {}
+            def __init__(self):
+                self.model = Model()
+                self._queues = {}
 
             def _prepare_batch(self, batch):
                 return batch

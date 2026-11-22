@@ -1,48 +1,37 @@
-# FlowEdge + LeRobot
+# FlowEdge + LeRobot Integration
 
-An optional deployment plugin for supported LeRobot policies. LeRobot keeps
-training, camera processing, robot drivers, joint limits, and emergency stops;
-FlowEdge replaces the supported action-generation step.
+An optimized deployment adapter for [LeRobot](https://github.com/huggingface/lerobot) policies. LeRobot manages model training, dataset handling, vision pipelines, and robot hardware drivers; FlowEdge executes the compute-intensive action-generation head natively.
 
-## Who should use this
+---
 
-- You have a compatible LeRobot Diffusion Policy and want its action head in
-  FlowEdge's native runtime.
-- You have a trained SmolVLA and want to try the experimental hybrid path
-  (LeRobot VLM plus FlowEdge action expert).
-- You want a measured local action-inference path, not a general VLA host.
+## Use Cases
 
-FlowEdge's current published comparisons are PushT only: 851 vs 1409 ms on
-CPU (`threads=1`), and 131 vs 345 ms on a desktop GTX 1650. They are not
-Jetson or SO-100 performance results. The SmolVLA expert currently runs on CPU;
-the VLM is not native. Its optional CUDA mode runs the source VLM through
-PyTorch on CUDA, then copies the K/V cache to the CPU expert once per chunk.
+- **LeRobot Diffusion Policy**: Accelerate the 1D convolutional U-Net action head using FlowEdge's native C++ runtime with zero hot-path allocations.
+- **SmolVLA (Hybrid Execution)**: Run the Vision-Language Model in PyTorch while executing the action expert natively in FlowEdge.
+- **Hardware Deployment**: Package trained checkpoints for real-robot deployment via standard `lerobot-rollout`.
 
-## Install
+---
 
-Use Python 3.12+. Install the matching CPU FlowEdge wheel and this plugin's
-robot extra in the same environment:
+## Installation
+
+Requires Python 3.10+ (Python 3.12+ recommended) and LeRobot `>=0.6.1,<0.7`:
 
 ```bash
-python -m pip install ./path/to/downloaded-flowedge-wheel.whl
-python -m pip install "integrations/lerobot[so100,smolvla]"
+# Install FlowEdge and the LeRobot integration with robot extras
+python -m pip install flowedge-0.1.2-*.whl
+python -m pip install "integrations/lerobot[so101,smolvla]"
 ```
 
-Replace the example path with the CPython/platform wheel downloaded from the
-[v0.1.2 release](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2).
-For Diffusion Policy only, `[so100]` is enough; add `smolvla` for SmolVLA. Use
-`[so101]` instead of `so100` for an SO-101 follower. The LeRobot plugin supports LeRobot
-`>=0.6.1,<0.7`. CUDA requires a separately built FlowEdge CUDA runtime for
-native CUDA Diffusion Policy; it is not included in the published wheel.
-SmolVLA's hybrid CUDA-VLM/CPU-expert mode works with the CPU FlowEdge wheel and
-CUDA-enabled PyTorch.
+- For Diffusion Policy only, `[so100]` or `[so101]` is sufficient. Add `[smolvla]` for SmolVLA models.
+- The prebuilt wheels provide CPU execution. For GPU acceleration, build FlowEdge with `-DFLOWEDGE_BACKEND=cuda` in an environment with CUDA-enabled PyTorch.
+
+---
 
 ## Python API
 
-Package and load a supported policy. A Diffusion Policy requires its matching
-converted checkpoint; SmolVLA is detected from its trained policy directory.
+### 1. Diffusion Policy
 
-Create the Diffusion Policy checkpoint once from its trained LeRobot directory:
+Convert the trained LeRobot checkpoint once:
 
 ```bash
 python -m flowedge_dev pipeline convert \
@@ -50,46 +39,78 @@ python -m flowedge_dev pipeline convert \
   models/my_policy.flowedge.safetensors --arch diffusion
 ```
 
+Package and execute the policy:
+
 ```python
 from flowedge_lerobot import load_policy, package_policy
 
+# Package model with normalization parameters
 package = package_policy(
     "outputs/train/my_policy/checkpoints/last/pretrained_model",
     "deploy/my_policy",
     converted_checkpoint="models/my_policy.flowedge.safetensors",
 )
+
 policy = load_policy(package, device="cpu")
 policy.reset()
-# Application sketch: provide the latest observation mapping from your
-# camera/state reader, matching policy.input_features.
+
+# Sample next action from current observation
 action = policy.select_action(observation)
 ```
 
-For SmolVLA, omit `converted_checkpoint` and pass the language instruction:
+To predict an entire unconsumed action chunk directly:
+```python
+chunk = policy.predict_action_chunk(observation)  # Shape: (1, action_steps, action_dim)
+```
+
+### 2. SmolVLA
+
+Package directly from the trained LeRobot checkpoint directory:
 
 ```python
 package = package_policy("outputs/train/smolvla/pretrained_model", "deploy/smolvla")
 policy = load_policy(package, device="cpu")
+policy.reset()
+
 action = policy.select_action(observation, task="pick up the cube")
 ```
 
-`select_action` accepts an unbatched LeRobot observation and returns a
-postprocessed tensor shaped `(1, action_dim)`. It is not the named joint
-mapping accepted by a robot driver; LeRobot's rollout path performs that
-mapping. `policy.input_features` lists the expected observation keys and
-shapes. For SmolVLA, `device="cuda"` places the source VLM on CUDA while the
-FlowEdge action expert stays on CPU; this is not a device-resident CUDA expert.
-For a remote SmolVLA base,
-pass `vlm_revision="<commit>"` to pin its tokenizer/config assets; the package
-manifest records the resolved revision and asset hashes.
+---
 
-## Robot rollout
+## Deployment CLI (`flowedge-edge`)
 
-Use LeRobot's standard `lerobot-rollout` with the packaged policy. The Python
-action API does not schedule a control period. `flowedge-lerobot-rollout` is a
-simulator-only smoke test; its period and miss-policy results do not apply to
-physical hardware. Commission physical motion with an unloaded arm and a short
-duration; see the [deployment guide](../../docs/guides/lerobot.md).
+The `flowedge-edge` command groups common deployment utilities:
 
-The low-level `flowedge.Engine`, native sampling calls, benchmarks, and
-verification tools remain available to advanced users and maintainers.
+```bash
+# View available deployment commands
+flowedge-edge --help
+
+# Run diagnostic preflight without connecting a robot
+flowedge-edge preflight deploy/my_policy --device cpu --output preflight.json
+
+# Run end-to-end benchmark comparison against PyTorch
+flowedge-edge bench models/my_policy.flowedge.safetensors \
+  --source outputs/train/my_policy/checkpoints/last/pretrained_model \
+  --revision <source-revision> --observations observations.npz \
+  --device cpu --output comparison.json
+```
+
+---
+
+## Physical Robot Rollout
+
+Deploy on hardware using LeRobot's standard rollout runner:
+
+```bash
+lerobot-rollout \
+  --strategy.type=base \
+  --policy.path=deploy/my_policy \
+  --device=cpu \
+  --robot.type=so101_follower \
+  --robot.port=/dev/ttyACM0 \
+  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+  --task="place the object in the bin" \
+  --duration=30
+```
+
+For full rollout configurations and deadline policies, see the [LeRobot Deployment Guide](../../docs/guides/lerobot.md).

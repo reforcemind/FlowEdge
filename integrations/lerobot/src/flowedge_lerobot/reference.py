@@ -1,14 +1,70 @@
 """Independent upstream LeRobot U-Net and diffusers DDIM reference."""
 
+import json
 from pathlib import Path
 
 import numpy as np
 import torch
 from diffusers import DDIMScheduler
-from safetensors import safe_open
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionConditionalUnet1d
+from safetensors import safe_open
 
 from .observation import source_config
+
+
+def action_statistics(directory):
+    """Read the source policy's MIN_MAX action statistics independently."""
+    directory = Path(directory).resolve()
+    processor = directory / "policy_postprocessor.json"
+    if processor.is_file():
+        config = json.loads(processor.read_text(encoding="utf-8"))
+        steps = config.get("steps", [])
+        matches = [
+            step
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("registry_name") == "unnormalizer_processor"
+        ]
+        if len(matches) != 1:
+            raise ValueError("postprocessor must contain one action unnormalizer")
+        step = matches[0]
+        if step.get("config", {}).get("norm_map", {}).get("ACTION") != "MIN_MAX":
+            raise ValueError("reference requires MIN_MAX action normalization")
+        filename = step.get("state_file")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError("postprocessor state_file is required")
+        state = (directory / filename).resolve()
+        if not state.is_relative_to(directory):
+            raise ValueError(
+                "postprocessor state must stay inside the source directory"
+            )
+        names = ("action.min", "action.max")
+    else:
+        state = directory / "model.safetensors"
+        names = (
+            "unnormalize_outputs.buffer_action.min",
+            "unnormalize_outputs.buffer_action.max",
+        )
+    with safe_open(state, framework="numpy") as weights:
+        if not processor.is_file() and names[0] not in weights.keys():
+            names = (
+                "normalize_targets.buffer_action.min",
+                "normalize_targets.buffer_action.max",
+            )
+        if any(name not in weights.keys() for name in names):
+            raise ValueError("source checkpoint is missing action MIN_MAX statistics")
+        minimum, maximum = (
+            torch.from_numpy(weights.get_tensor(name).copy()) for name in names
+        )
+    if (
+        minimum.ndim != 1
+        or minimum.shape != maximum.shape
+        or not torch.isfinite(minimum).all()
+        or not torch.isfinite(maximum).all()
+        or not torch.all(maximum > minimum)
+    ):
+        raise ValueError("invalid action MIN_MAX statistics in source checkpoint")
+    return minimum, maximum
 
 
 class TorchDiffusionReference:
@@ -30,12 +86,7 @@ class TorchDiffusionReference:
                 for k in weights.keys()
                 if k.startswith(prefix)
             }
-            self.minimum = torch.from_numpy(
-                weights.get_tensor("unnormalize_outputs.buffer_action.min").copy()
-            )
-            self.maximum = torch.from_numpy(
-                weights.get_tensor("unnormalize_outputs.buffer_action.max").copy()
-            )
+        self.minimum, self.maximum = action_statistics(directory)
         self.unet.load_state_dict(state, strict=True, assign=True)
         self.unet.to(self.device)
         if compile_mode != "none":

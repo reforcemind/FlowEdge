@@ -6,16 +6,16 @@ PyTorch CUDA. Closed-loop success is measured by evaluate.py.
 """
 
 import argparse
-from datetime import datetime, timezone
 import gc
 import hashlib
 import importlib.metadata
 import json
-from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from time import perf_counter_ns
 
 import numpy as np
@@ -107,9 +107,9 @@ def time_policy_loop(
         else:
             chunk = policy.predict_action_chunk(condition, noise, steps=steps)
         synchronize(device)
-        end = perf_counter_ns()
         if torch.is_tensor(chunk):
             chunk = chunk.detach().cpu().numpy()
+        end = perf_counter_ns()
         chunks.append(np.array(chunk, copy=True))
         if iteration >= warmup:
             samples[name]["encoder_ms"].append((encoded - begin) / 1e6)
@@ -168,7 +168,8 @@ def main(argv=None):
         parser.error("compiled reference requires at least one warmup iteration")
     torch.set_num_threads(args.threads)
     import flowedge
-    from .cli import peak_rss_bytes
+
+    from .cli import _jetson_facts, peak_rss_bytes
     from .diffusion import FlowEdgeDiffusionPolicy
     from .observation import (
         DiffusionObservationEncoder,
@@ -201,7 +202,8 @@ def main(argv=None):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fixture = args.output.with_suffix(".observations.npz")
     if args.observations is not None:
-        shutil.copyfile(args.observations, fixture)
+        if args.observations.resolve() != fixture.resolve():
+            shutil.copyfile(args.observations, fixture)
         frames = load_observation_frames(fixture)
     else:
         from .evaluate import PushTRobot
@@ -234,16 +236,16 @@ def main(argv=None):
         name: {"encoder_ms": [], "policy_ms": [], "end_to_end_ms": []}
         for name in ("flowedge", "lerobot")
     }
-    loop_args = dict(
-        encoder=encoder,
-        frames=frames,
-        noise=noise,
-        steps=args.steps,
-        device=args.device,
-        warmup=args.warmup,
-        iterations=args.iterations,
-        samples=samples,
-    )
+    loop_args = {
+        "encoder": encoder,
+        "frames": frames,
+        "noise": noise,
+        "steps": args.steps,
+        "device": args.device,
+        "warmup": args.warmup,
+        "iterations": args.iterations,
+        "samples": samples,
+    }
     if args.device == "cuda":
         flowedge_chunks = time_policy_loop("flowedge", native, **loop_args)
         del native
@@ -317,10 +319,8 @@ def main(argv=None):
             "startup_ms": startup_ms + encoder_startup,
             **{k: quantiles(v) for k, v in samples[name].items()},
             "throughput_hz": 1000 / float(np.mean(samples[name]["end_to_end_ms"])),
-            "rss_mb": None if rss is None else rss / 2**20,
-            "rss_reason": "process high-water RSS is unavailable on this host"
-            if rss is None
-            else "",
+            "rss_mb": None,
+            "rss_reason": "process high-water RSS cannot be attributed to one backend",
             "allocations": {
                 "setup": None,
                 "hot_path": None,
@@ -371,6 +371,8 @@ def main(argv=None):
             "accelerator": args.device,
             "compiler": flowedge.compiler,
             "build_type": flowedge.build_type,
+            "jetson": _jetson_facts(),
+            "process_peak_rss_mb": None if rss is None else rss / 2**20,
         },
         "commands": {"flowedge": command, "lerobot": command},
         "comparison": {
@@ -386,7 +388,7 @@ def main(argv=None):
             "scope": (
                 "matched observation encoder, history, noise, and DDIM schedule on CUDA; "
                 "FlowEdge engine is freed before the PyTorch U-Net is loaded; "
-                "not TensorRT/ONNX; not Jetson/ARM"
+                "not TensorRT/ONNX"
                 if args.device == "cuda"
                 else "matched observation encoder, history, noise, and DDIM schedule"
             ),
@@ -404,11 +406,11 @@ def main(argv=None):
         "warmup": args.warmup,
         "limitations": [
             (
-                "CUDA full-policy replay of one fixed PushT observation history; not closed-loop task success."
+                "CUDA full-policy replay of one fixed observation history; not closed-loop task success."
                 if args.device == "cuda"
-                else "CPU full-policy replay of one fixed PushT observation history; not closed-loop task success."
+                else "CPU full-policy replay of one fixed observation history; not closed-loop task success."
             ),
-            "End-to-end includes preprocessing, encoder, history and sampling; excludes camera capture, IPC and robot delivery.",
+            "End-to-end includes preprocessing, encoder, history, sampling and the final action copy to CPU; excludes camera capture, IPC and robot delivery.",
             (
                 "RSS is peak process high-water memory; CUDA frees the FlowEdge engine before loading the PyTorch U-Net, so both U-Nets are not device-resident together."
                 if args.device == "cuda"
@@ -424,8 +426,7 @@ def main(argv=None):
         document["limitations"].extend(
             [
                 "CUDA device name is the headline; host threads record leftover CPU work, not a GPU fair-compare.",
-                "Not Jetson/ARM evidence. Not TensorRT/ONNX.",
-                "A 4GB GPU cannot hold the FlowEdge resident DDIM and the PyTorch U-Net at once.",
+                "Native CUDA reuses device noise; the PyTorch reference transfers its supplied noise per call.",
             ]
         )
     args.output.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")

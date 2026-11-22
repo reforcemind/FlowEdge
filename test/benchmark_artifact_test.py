@@ -86,6 +86,21 @@ class BenchmarkArtifactTest(unittest.TestCase):
         with self.assertRaises(benchmark_artifact.ArtifactError):
             benchmark_artifact.validate(document)
 
+    def test_shared_process_memory_and_jetson_are_rendered_as_host_facts(self):
+        document = measured()
+        document["hardware"]["process_peak_rss_mb"] = 123.0
+        document["hardware"]["jetson"] = {
+            "detected": True,
+            "model": "Jetson example",
+            "tegra_release": "release example",
+        }
+        for measurement in document["measurements"].values():
+            measurement["rss_mb"] = None
+            measurement["rss_reason"] = "shared process high-water mark"
+        report = benchmark_artifact.render(benchmark_artifact.validate(document))
+        self.assertIn("123.000 MiB (shared across both measurements)", report)
+        self.assertIn("Jetson example; release example", report)
+
     def test_compiled_reference_is_explicit_in_report(self):
         document = measured()
         document["comparison"] = {

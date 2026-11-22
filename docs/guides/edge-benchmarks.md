@@ -1,47 +1,55 @@
-# Reproducible policy reports
+# Reproducible Policy Benchmarks
 
-Matched **Diffusion Policy** p50 vs LeRobot/PyTorch is this recipe. Flow matching
-ULP and graph compilers live on [Performance](../performance.md) — do not mix
-those rows.
+This guide describes how to run and generate standardized, reproducible benchmark reports comparing FlowEdge against upstream PyTorch and LeRobot baselines.
 
 ```{image} ../_static/figures/benches.svg
-:alt: kernels, Relay tail, policy vs PyTorch, period misses
+:alt: Benchmark structure: kernels, runtime tail, policy vs PyTorch, period misses
 :class: fe-fig
 ```
 
-## Run one report
+---
+
+## Generating a Benchmark Report
+
+To run a matched Diffusion Policy comparison:
 
 ```bash
+# CPU comparison (single-threaded baseline)
 python -m flowedge_dev bench policy models/policy.safetensors \
   --source models/diffusion_pusht --revision <revision> \
   --steps 10 --iterations 100 --warmup 5 --threads 1 \
   --output tools/benchmark/artifacts/policy/diffusion-pusht-report.json
 ```
 
-The published CPU replay used `--threads 1`. CUDA matched replay uses
-`--device cuda` and records the CUDA device name; `threads=1` is not the GPU
-headline. Do not mix thread counts or devices across backends.
+For CUDA evaluation:
 
-| Output | Includes |
-|---|---|
-| JSON | model/processor hashes, contract, host/build, raw samples, parity, limitations |
-| Markdown | p50/p95/p99 table, FlowEdge/LeRobot ratios, exact commands |
-| `.observations.npz` | fixed observation history used by the matched replay |
+```bash
+# CUDA comparison (device-resident GPU execution)
+python -m flowedge_dev bench policy models/policy.safetensors \
+  --source models/diffusion_pusht --revision <revision> \
+  --steps 10 --iterations 100 --warmup 5 --device cuda \
+  --output tools/benchmark/artifacts/policy/diffusion-pusht-cuda-report.json
+```
 
-The reference is not a toy implementation: it is LeRobot running through
-PyTorch. End-to-end includes preprocessing, observation history, encoder, and
-iterative sampling; it excludes camera capture, IPC, and robot delivery.
+### Report Contents
 
-## Contract
+The benchmark runner generates matched JSON and Markdown reports containing:
+- **Latencies**: Full action-chunk generation times (`p50`, `p95`, `p99`).
+- **Parity Verification**: Maximum absolute error and relative error against PyTorch outputs.
+- **Hardware & Environment**: CPU model, GPU device, driver versions, compiler, and thread count.
+- **Provenance**: SHA256 hashes of input models, configs, processors, and observation vectors.
 
-| Field | Rule |
-|---|---|
-| Quantiles | `p50 <= p95 <= p99` |
-| Backend status | `measured`, `not_measured`, `unavailable`, or `blocked` |
-| Missing values | Keep them null and explain the reason; never write zero |
-| Reproducibility | Pin revision, hashes, host, compiler, threads, steps, warmup, and iterations |
+---
 
-Validate an existing artifact with:
+## Reproducibility Standards
+
+To ensure comparability across runs and systems:
+- **Identical Inputs**: All runs must use the same observation sequences (`.observations.npz`), initial noise tensors, and scheduler step counts.
+- **Warmup Iterations**: Always include sufficient warmup iterations (e.g. 5) to allow CPU caches or GPU contexts to reach steady state.
+- **Quantile Validity**: Reports enforce strict monotonicity: `p50 <= p95 <= p99`.
+- **Accurate Reporting**: Missing or uninstrumented metrics must be explicitly noted as `null` with a stated reason rather than reported as zero.
+
+To validate an existing JSON artifact against the schema:
 
 ```bash
 python -m flowedge_dev bench artifact \
@@ -49,5 +57,4 @@ python -m flowedge_dev bench artifact \
   --report tools/benchmark/artifacts/policy/diffusion-pusht-report.md
 ```
 
-Small runs are smoke checks, not stable p99 evidence. Repeat on the target
-machine and publish the JSON, report, and raw samples together.
+For published benchmark figures and comparisons, see [Performance Documentation](../performance).

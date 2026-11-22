@@ -203,10 +203,14 @@ class PluginTests(unittest.TestCase):
                 "n_layers": 2,
             }
 
+            def __init__(self):
+                self.noises = []
+
             def smolvla_sample(
                 self, noise, prefix_keys, prefix_values, prefix_mask, steps
             ):
-                del noise, prefix_keys, prefix_values, prefix_mask, steps
+                self.noises.append(noise.copy())
+                del prefix_keys, prefix_values, prefix_mask, steps
                 return np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)
 
         class Provider:
@@ -232,14 +236,20 @@ class PluginTests(unittest.TestCase):
                 "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,))
             },
         )
+        engine = Engine()
         policy = FlowEdgeSmolVLAPolicy(
             config,
-            expert=FlowEdgeSmolVLACachedExpert(Engine(), action_dim=2, action_steps=2),
+            expert=FlowEdgeSmolVLACachedExpert(engine, action_dim=2, action_steps=2),
             cache_provider=Provider(),
         )
         batch = {"observation.state": torch.zeros(1, 6)}
         self.assertEqual(policy.select_action(batch).tolist(), [[1, 2]])
         self.assertEqual(policy.select_action(batch).tolist(), [[3, 4]])
+        self.assertEqual(policy.select_action(batch).tolist(), [[1, 2]])
+        policy.predict_action_chunk(batch)
+        self.assertEqual(policy._expert.remaining_actions, 0)
+        policy.predict_action_chunk(batch)
+        self.assertFalse(np.array_equal(engine.noises[-2], engine.noises[-1]))
         self.assertEqual(policy.select_action(batch).tolist(), [[1, 2]])
 
 

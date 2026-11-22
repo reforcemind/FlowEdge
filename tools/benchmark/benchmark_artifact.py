@@ -237,6 +237,15 @@ def render(document: dict[str, Any]) -> str:
         f"| Comparison | {comparison.get('candidate', 'FlowEdge')} vs {comparison.get('reference', 'LeRobot reference')} |",
         f"| Reference framework | `{comparison.get('reference_framework', 'unspecified')}` |",
     ]
+    if hardware.get("process_peak_rss_mb") is not None:
+        rows.append(
+            f"| Process peak RSS | {_display(hardware['process_peak_rss_mb'], ' MiB')} (shared across both measurements) |"
+        )
+    jetson = hardware.get("jetson")
+    if isinstance(jetson, dict) and jetson.get("detected"):
+        rows.append(
+            f"| Jetson | {jetson.get('model', 'model unavailable')}; {jetson.get('tegra_release', 'release unavailable')} |"
+        )
     if comparison.get("scope"):
         rows.append(f"| Scope | {comparison['scope']} |")
     if "reference_compile" in comparison:

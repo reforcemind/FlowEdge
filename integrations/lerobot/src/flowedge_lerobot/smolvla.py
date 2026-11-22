@@ -165,6 +165,10 @@ class FlowEdgeSmolVLACachedExpert:
     def reset(self) -> None:
         """Discard a stale action chunk and reset seeded sampling for a new episode."""
         self._rng = np.random.default_rng(self._seed)
+        self.discard_actions()
+
+    def discard_actions(self) -> None:
+        """Discard queued actions without restarting the sampling sequence."""
         self._next_action = self.action_steps
 
     @staticmethod
@@ -355,6 +359,42 @@ class LeRobotSmolVLACacheProvider:
             )
         return np.ascontiguousarray(flattened, dtype=np.float32)
 
+    def _pack_cache(self, cache: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Pack one layer at a time to avoid retaining all host transfer buffers."""
+        if not isinstance(cache, dict) or len(cache) != self._expert_layers:
+            raise ValueError(
+                f"source VLM cache must contain {self._expert_layers} expert layers"
+            )
+        keys = values = None
+        for layer in range(self._expert_layers):
+            if layer not in cache:
+                raise ValueError(f"source VLM cache is missing layer {layer}")
+            layer_cache = cache[layer]
+            if not isinstance(layer_cache, dict):
+                raise TypeError(f"source VLM cache layer {layer} must be a mapping")
+            keys_tensor = layer_cache.get("key_states")
+            values_tensor = layer_cache.get("value_states")
+            if keys_tensor is None or values_tensor is None:
+                raise ValueError(
+                    f"source VLM cache layer {layer} has no key/value tensors"
+                )
+            key = self._cache_tensor(
+                keys_tensor, f"layer {layer} keys", self._key_value_width
+            )
+            value = self._cache_tensor(
+                values_tensor, f"layer {layer} values", self._key_value_width
+            )
+            if keys is None:
+                keys = np.empty((self._expert_layers, *key.shape), dtype=np.float32)
+                values = np.empty_like(keys)
+            if key.shape != keys.shape[1:] or value.shape != keys.shape[1:]:
+                raise ValueError(
+                    "source VLM cache layers must have matching prefix lengths"
+                )
+            keys[layer] = key
+            values[layer] = value
+        return keys, values
+
     def __call__(self, batch: dict[str, Any]) -> SmolVLAKVCache:
         """Return one batch-one source VLM cache for a LeRobot-prepared batch."""
         import torch
@@ -395,40 +435,13 @@ class LeRobotSmolVLACacheProvider:
                 fill_kv_cache=True,
             )
 
-        if not isinstance(cache, dict) or len(cache) != self._expert_layers:
-            raise ValueError(
-                f"source VLM cache must contain {self._expert_layers} expert layers"
-            )
-        keys = []
-        values = []
-        for layer in range(self._expert_layers):
-            if layer not in cache:
-                raise ValueError(f"source VLM cache is missing layer {layer}")
-            layer_cache = cache[layer]
-            if not isinstance(layer_cache, dict):
-                raise TypeError(f"source VLM cache layer {layer} must be a mapping")
-            keys_tensor = layer_cache.get("key_states")
-            values_tensor = layer_cache.get("value_states")
-            if keys_tensor is None or values_tensor is None:
-                raise ValueError(
-                    f"source VLM cache layer {layer} has no key/value tensors"
-                )
-            keys.append(
-                self._cache_tensor(
-                    keys_tensor, f"layer {layer} keys", self._key_value_width
-                )
-            )
-            values.append(
-                self._cache_tensor(
-                    values_tensor, f"layer {layer} values", self._key_value_width
-                )
-            )
+        keys, values = self._pack_cache(cache)
 
         mask = prefix_pad_masks.detach().to(device="cpu").contiguous().numpy()
         if mask.ndim != 2 or mask.shape[0] != 1:
             raise ValueError("source prefix mask must have batch-one shape [1, prefix]")
         return SmolVLAKVCache(
-            keys=np.ascontiguousarray(np.stack(keys), dtype=np.float32),
-            values=np.ascontiguousarray(np.stack(values), dtype=np.float32),
+            keys=keys,
+            values=values,
             mask=np.ascontiguousarray(mask[0].astype(np.uint8, copy=False)),
         )

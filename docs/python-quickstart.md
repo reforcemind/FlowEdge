@@ -1,69 +1,125 @@
-# Python
+# Python Quickstart
 
-CPU wheels for CPython 3.10–3.12 ship with GitHub Releases. They are not on PyPI yet. CUDA is a source build (`FLOWEDGE_BACKEND=cuda`), not a wheel extra.
+FlowEdge provides Python bindings built with pybind11, giving direct access to C++ inference with zero dynamic allocations on hot paths.
 
-## Install a wheel
+## Installation
 
-1. Open [v0.1.2](https://github.com/reforcemind/FlowEdge/releases/tag/v0.1.2).
-2. Download the `.whl` for your OS and CPython from that Release (stable URL, no Actions login). Filenames are `flowedge-0.1.2-*`. CUDA is not in the wheel.
-3. Install it:
+### Prebuilt Wheels (CPU)
+
+Prebuilt CPU wheels for CPython 3.10–3.12 are available on the [FlowEdge GitHub Releases](https://github.com/reforcemind/FlowEdge/releases).
 
 ```bash
+# Download the wheel matching your platform, then install:
 python -m pip install flowedge-0.1.2-*.whl
 ```
 
-| Platform | Wheel tag |
+| Platform | Wheel Tag |
 |---|---|
 | Linux x86_64 | `manylinux_2_28_x86_64` |
 | Linux aarch64 | `manylinux_2_28_aarch64` |
 | Windows | `win_amd64` |
 | macOS ARM | `macosx_arm64` |
 
-From a clone, `python -m pip install .` still compiles with a C++23 toolchain. That is the source path, not the first-run path.
+### Building from Source
 
-## Sample flow matching
+To build from source with your local C++23 toolchain:
+
+```bash
+git clone https://github.com/reforcemind/FlowEdge.git
+cd FlowEdge
+python -m pip install .
+```
+
+For CUDA acceleration, see the [CUDA Architecture Guide](architecture/cuda).
+
+---
+
+## Basic Inference
+
+Download a reference Mamba flow matching checkpoint and sample actions:
 
 ```bash
 mkdir -p models
 curl -L "https://huggingface.co/ReForceMind/mamba_flow/resolve/main/mamba_flow.safetensors" \
   -o models/mamba_flow.safetensors
-python examples/core/flow_sample.py models/mamba_flow.safetensors euler 10
 ```
 
 ```python
-import numpy as np, flowedge
-e = flowedge.Engine("models/mamba_flow.safetensors")
-a = e.sample(prefix=np.array([1, 2, 3, 4], dtype=np.int32),
-             noise=np.random.randn(e.action_dim).astype("float32"),
-             steps=10, method="euler")
+import numpy as np
+import flowedge
+
+# Load checkpoint into fixed arena
+engine = flowedge.Engine("models/mamba_flow.safetensors")
+
+print(f"Action dim: {engine.action_dim}")
+print(f"Condition dim: {engine.condition_dim}")
+print(f"Model dim: {engine.d_model}")
+
+# Generate action chunk via flow matching
+prefix = np.array([1, 2, 3, 4], dtype=np.int32)
+noise = np.random.randn(engine.action_dim).astype(np.float32)
+
+action = engine.sample(prefix=prefix, noise=noise, steps=10, method="euler")
+print("Action chunk:", action)
 ```
 
-That prefix is the ULP gate (~1e-6 rel vs PyTorch), not a policy p50.
+Supported integration solvers for flow matching: `"euler"`, `"heun"`, and `"rk4"`.
 
-Load may allocate once. Supported hot paths allocate nothing after init. One engine, one stream. The published wheel backend is CPU.
+---
 
-Zero-copy `run_into` / `sample_into` live in the [Python API](api/python).
+## Zero-Allocation Hot Paths
 
-## CUDA
+Standard calls like `engine.sample()` allocate a new NumPy array on each invocation. In high-frequency control loops, use the zero-copy buffer methods (`run_into`, `step_into`, `sample_into`) to write directly into pre-allocated memory:
 
-Wheels do not include CUDA kernels. **v0.1.2 is a CPU wheel, not PyPI.** CUDA is a source build (`FLOWEDGE_BACKEND=cuda`). The first GPU user has to survive `nvcc` plus WSL or MSVC; a 4 GB card must not brick `fe_engine_load`.
+```python
+import numpy as np
+import flowedge
 
-On Windows, `nvcc` needs an MSVC-compatible host compiler. The MinGW/Clang tree used for CPU Release builds cannot host `nvcc`. Use WSL or MSVC.
+engine = flowedge.Engine("models/mamba_flow.safetensors")
+
+tokens = np.array([1, 2, 3, 4], dtype=np.int32)
+noise = np.random.randn(engine.action_dim).astype(np.float32)
+
+# Pre-allocate output buffer once during setup
+action_buf = np.empty(engine.action_dim, dtype=np.float32)
+
+# Control tick: runs completely allocation-free and releases the Python GIL
+engine.sample_into(tokens, noise, action_buf, steps=10, method="euler")
+```
+
+Buffers must be C-contiguous and have matching shapes and data types (`int32` or `float32`).
+
+---
+
+## CUDA Support
+
+CUDA acceleration requires building from source with `nvcc`:
 
 ```bash
 cmake -S . -B build-cuda -DCMAKE_BUILD_TYPE=Release -DFLOWEDGE_BACKEND=cuda -DFLOWEDGE_PYTHON=ON
 cmake --build build-cuda -j
-python -c "import flowedge; e=flowedge.Engine('models/diffusion_pusht.flowedge.safetensors'); print(flowedge.cuda, e.cuda_resident)"
 ```
 
-`flowedge.cuda` is compile-time. `Engine.cuda_resident` is runtime: 1 only if Mamba / flow / Diffusion Policy weights actually uploaded. A GTX 1650 4 GB WDDM/WSL host often cannot `cudaMalloc` the PushT U-Net (~959 MiB). Load then keeps **CPU kernels**; that is not an engine failure. `FLOWEDGE_CUDA_REQUIRED=1` fails closed if attach did not happen. `FLOWEDGE_CUDA_FORCE_HOST=1` skips the doomed upload.
+Verify CUDA availability and device residency:
 
-`--device cuda` in the LeRobot adapter requires both a CUDA Core binary and `cuda_resident`. The published CUDA headline stays GTX 1650 matched replay **131 vs 345 ms**. Fusion / BF16 stay ungated until isolate **and** native DDIM / policy p50 move on a card that can load the U-Net.
+```python
+import flowedge
 
-See [CUDA](architecture/cuda).
+print("CUDA compiled in:", flowedge.cuda)
 
-## PyPI (not published)
+engine = flowedge.Engine("models/diffusion_pusht.flowedge.safetensors")
+print("Weights device-resident:", engine.cuda_resident)
+```
 
-`pip install flowedge` is not live. On 2026-09-19 `https://pypi.org/pypi/flowedge/json` returned 404, so the name is still free. [publish.yml](https://github.com/reforcemind/FlowEdge/blob/main/.github/workflows/publish.yml) already builds the same CPU wheels and can upload with Trusted Publishing when the repository variable `FLOWEDGE_PUBLISH_PYPI` is `true`. CUDA stays a source backend after that upload; do not advertise a CUDA extra that the wheel does not contain.
+- `flowedge.cuda`: Compile-time flag indicating whether the binary contains CUDA kernels.
+- `engine.cuda_resident`: Runtime flag indicating whether weights were successfully uploaded to GPU memory. If GPU memory allocation fails, FlowEdge gracefully retains CPU execution unless `FLOWEDGE_CUDA_REQUIRED=1` is set to fail closed.
 
-Maintainer checklist: PyPI Trusted Publisher for `flowedge` on **reforcemind/FlowEdge** → GitHub environment `pypi` → set `FLOWEDGE_PUBLISH_PYPI=true` → publish a tagged release.
+For detailed architecture and configuration options, see the [CUDA Architecture Guide](architecture/cuda).
+
+---
+
+## Next Steps
+
+- [Python API Reference](api/python) — Complete class and method definitions.
+- [LeRobot Guide](guides/lerobot) — End-to-end deployment with LeRobot policies.
+- [Performance Benchmarks](performance) — Latency comparisons and hardware results.

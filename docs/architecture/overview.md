@@ -1,51 +1,60 @@
-# Overview
+# Architecture Overview
 
-FlowEdge is a small stack with one job per layer. The point is worst-case latency on a robot period, not average throughput.
-
-A general graph runtime would accept more architectures with less hand work. It would also reintroduce allocation, dispatch, and a working set that is hard to bound — exactly the variance a control loop cannot absorb. So the model is hand-assembled: convert tensors into known names, carve one arena, call kernels through one header. [ADR 0005](../decisions/0005-no-graph-runtime).
-
-```{image} ../_static/figures/purpose.svg
-:alt: Hardware runs the loop, FlowEdge runs the policy, LeRobot trains and drives the robot
-:class: fe-fig
-```
+FlowEdge is designed around worst-case latency and deterministic execution for robotics control loops, prioritizing bounded memory and zero runtime allocation over generic graph flexibility.
 
 ```{image} ../_static/figures/big-flow.svg
-:alt: Whole FlowEdge flow from checkpoint to motors
+:alt: End-to-end FlowEdge architecture from checkpoint to motor controller
 :class: fe-fig
 ```
 
-```{image} ../_static/figures/relay.svg
-:alt: Optional Relay flow from sensor or VLA through shared-memory rings to Core
-:class: fe-fig
-```
+---
+
+## Design Philosophy
+
+General graph compilers often introduce dynamic memory management, kernel dispatch overhead, and unpredictable working sets. For physical robots operating on strict control deadlines (e.g. 10–100 Hz), jitter in inference time directly translates to control instability.
+
+FlowEdge achieves predictable, low-latency execution through a hand-assembled execution pipeline:
+- **Fixed Memory Arena**: All weight tensors and intermediate execution scratch are pre-sized and allocated once at initialization.
+- **Dedicated Policy Heads**: Optimized kernel paths for flow matching and Diffusion Policy U-Nets.
+- **Decoupled Observation Pipeline**: Vision backbones and image encoders remain in high-level frameworks (such as PyTorch or LeRobot), passing compact condition vectors into FlowEdge.
 
 ```{image} ../_static/figures/stack.svg
-:alt: Layers from plugin down to the arena
+:alt: FlowEdge layer architecture from application down to memory arena
 :class: fe-fig
 ```
 
-Two product heads share that stack:
+---
 
-- **Flow matching** — a short ODE \(dx/dt = v(x,t \mid c)\) from noise to action. Mamba (or a caller-supplied encoder) produces \(c\).
-- **Diffusion Policy** — DDIM on a Conv1D U-Net. LeRobot’s RGB encoder stays outside Core.
+## Architectural Layers
 
-Transformer conversion and a cached SmolVLA expert are incubators, not those heads.
+1. **Memory Arena (`src/core/arena/`)**:
+   A single contiguous byte slab managed with an aligned bump allocator. Memory is pre-faulted at load time to avoid page faults during control ticks. Layers reuse scratch memory via save-and-restore marks (`mark()` / `reset_to()`).
 
-```{image} ../_static/figures/matrix.svg
-:alt: Mamba plus flow matching, or LeRobot encoder plus DP U-Net
-:class: fe-fig
-```
+2. **Zero-Copy Loader (`src/core/loader/`)**:
+   Reads `.safetensors` files directly via memory mapping (`mmap`). Validates tensor shapes and types without external library dependencies, aligning weights to 64-byte boundaries.
 
-```{image} ../_static/figures/dataflow.svg
-:alt: tokens or condition, backbone, flow ODE, action chunk
-:class: fe-fig
-```
+3. **Kernel Layer (`src/core/kernels/`)**:
+   A single unified interface (`kernels.h`) backed by architecture-specific implementations:
+   - **CPU**: SIMD vectorized kernels with AVX2 and ARM NEON intrinsics, alongside portable scalar implementations.
+   - **CUDA**: Device-resident kernels with warp-level split-K reductions and fused operator launches.
 
-- **Arena.** One bump slab. Load may allocate it; the hot path does not.
-- **Loader.** Zero-dep `.safetensors` mmap. F32 and BF16.
-- **Runtime.** `engine_runtime` owns persistent state, model assembly, SPMC pool. C ABI is a thin adapter.
-- **Kernels.** One header. CPU today. `FLOWEDGE_BACKEND=cuda` keeps Mamba, flow, and Diffusion Policy heads on device. Vulkan / Tenstorrent (Metal) stay planned.
-- **Backbone.** Prefix → condition. Mamba today (constant-size state). Transformer is a CPU decoder fixture, not a policy.
-- **Head.** Condition + noise → action. Flow matching or Diffusion Policy. An external encoder can skip the backbone.
+4. **Representation Backbones (`src/core/models/`)**:
+   Computes conditioning vectors from inputs. FlowEdge natively supports Mamba (selective state-space model with $O(1)$ memory footprint), with constant-time streaming step decoding.
 
-Split the ODE with `flow_begin` / `flow_advance` if the robot has to yield. [Cooperative execution](cooperative-execution). Model code calls `matmul` and `discretize_and_scan`, never a device API. Footprint is computed at load.
+5. **Policy Heads (`src/core/heads/`)**:
+   Takes condition vectors and noise to generate action trajectories:
+   - **Flow Matching**: Solves straight-path ODEs via Euler, Heun, or Runge-Kutta 4.
+   - **Diffusion Policy**: Runs reverse denoising schedules via DDIM or seeded DDPM over a 1D convolutional U-Net.
+
+6. **Relay IPC (Optional, `src/relay/`)**:
+   Lock-free shared-memory rings supporting inter-process communication between vision pipelines and motor control loops with Earliest Deadline First (EDF) request scheduling.
+
+---
+
+## Cooperative Execution
+
+In robotics, an inference task must be able to yield to higher-priority control deadlines or safety events.
+
+FlowEdge provides cooperative scheduling primitives (`flow_begin` and `flow_advance`) that allow solvers to be broken down across multiple integration steps. Solver stages run in bounded increments without altering numerical results, maintaining bit-identical output with monolithic solves.
+
+For more details, see [Cooperative Execution](cooperative-execution).

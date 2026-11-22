@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+flowedge-edge = "flowedge_lerobot.__main__:main"
 flowedge-lerobot-rollout = "flowedge_lerobot.cli:main"
 flowedge-lerobot-benchmark = "flowedge_lerobot.benchmark:main"
 flowedge-lerobot-evaluate = "flowedge_lerobot.evaluate:main"
